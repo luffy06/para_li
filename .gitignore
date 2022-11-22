@@ -1,0 +1,11 @@
+/build/
+/lib/ALEX
+/lib/lipp
+/lib/PGM-index
+/lib/BTree
+/lib/YCSB
+/data/
+/workloads/
+/flow_input/
+/.vscode/
+/configs
