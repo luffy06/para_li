@@ -5,6 +5,7 @@
 #include <array>
 #include <atomic>
 #include <boost/optional.hpp>
+#include <boost/program_options.hpp>
 #include <cassert>
 #include <chrono>
 #include <cmath>
@@ -37,6 +38,8 @@
 #define likely(x) __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
+namespace po = boost::program_options;
+
 namespace aflipara {
 
 #define BIT_TYPE uint8_t
@@ -48,6 +51,23 @@ namespace aflipara {
 #define SET_BIT_ZERO(x, n) ((x) &= (~(1 << (n))))
 #define REV_BIT(x, n) ((x) ^= (1 << (n)))
 #define GET_BIT(x, n) (((x) >> (n)) & 1)
+
+#define COUT_INFO(this) std::cout << std::fixed << this << std::endl;
+#define COUT_ERR(this) \
+  std::cerr << std::fixed << this << std::endl; \
+  assert(false);
+
+#define UNUSED(var) ((void)var)
+#define ASSERT_WITH_MSG(cond, msg) \
+  { \
+    if (!(cond)) { \
+      COUT_ERR("Assertion at " << __FILE__ << ":" << __LINE__ << ", error: " << msg) \
+    } \
+  }
+
+#define TIME_LOG (std::chrono::high_resolution_clock::now())
+#define TIME_IN_NANO_SECOND(begin, end) (std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count())
+#define TIME_IN_SECOND(begin, end) (TIME_IN_NANO_SECOND(begin, end) / 1e9)
 
 inline void memory_fence() { asm volatile("mfence" : : : "memory"); }
 
@@ -88,7 +108,7 @@ void unlock_stdout() {
 
 #define COUT_W_LOCK(this) \
   lock_stdout(); \
-  std::cout << this << std::endl; \
+  std::cout << std::fixed << this << std::endl; \
   unlock_stdout();
 #define UNUSED(var) ((void)var)
 
@@ -126,7 +146,7 @@ inline bool compare(const T& a, const T& b) {
 }
 
 template<typename T>
-std::string STR(T n) {
+std::string tostr(T n) {
   std::stringstream ss;
   ss << std::setprecision(std::numeric_limits<T>::digits10) << std::fixed << n;
   std::string n_str = ss.str();
@@ -142,18 +162,18 @@ std::string STR(T n) {
 }
 
 template<typename T, typename P>
-P STRTONUM(T s) {
-  std::string str = STR<T>(s);
+P ston(T s) {
+  std::string ss = tostr<T>(s);
   P v = 0;
   int point = -1;
-  bool negative = (str[0] == '-');
-  for (int i = (negative ? 1 : 0); i < str.size(); ++ i) {
-    if (str[i] >= '0' && str[i] <= '9') {
-      v = v * 10 + (str[i] - '0');
-    } else if (point == -1 && str[i] == '.') {
-      point = str.size() - i - 1;
+  bool negative = (ss[0] == '-');
+  for (int i = (negative ? 1 : 0); i < ss.size(); ++ i) {
+    if (ss[i] >= '0' && ss[i] <= '9') {
+      v = v * 10 + (ss[i] - '0');
+    } else if (point == -1 && ss[i] == '.') {
+      point = ss.size() - i - 1;
     } else {
-      assert_p(false, str + " is not a number");
+      assert_p(false, ss + " is not a number");
     }
   }
   for (int i = 0; i < point; ++ i) {
@@ -165,7 +185,7 @@ P STRTONUM(T s) {
   return v;
 }
 
-bool StartWith(std::string src, std::string target) {
+bool start_with(std::string src, std::string target) {
   if (src.size() >= target.size()) {
     for (int i = 0; i < target.size(); ++ i) {
       if (src[i] != target[i]) {
@@ -184,6 +204,15 @@ void shuffle(std::vector<T>& kvs, int l, int r) {
     long long rv = gen();
     int j = std::abs(rv) % (r - i) + i;
     std::swap(kvs[j], kvs[i]);
+  }
+}
+
+void check_options(const po::variables_map& vm, 
+                   const std::vector<std::string>& options) {
+  for (auto op : options) {
+    if (!vm.count(op)) {
+      std::cout << "--" << op << " option required" << std::endl;
+    }
   }
 }
 
@@ -455,78 +484,116 @@ struct AtomicVal {
   }
 };
 
-// template<typename T>
-// class AtomicMulVerVal {
-//   struct ValItem {
-//     T val;
-//     uint32_t ref;
-//     AtomicMulVerVal* next;
-//     ValItem() {}
-//     ValItem(T val, AtomicMulVerVal* p) : val(val), ref(0), next(p) {}
-//   };
+// template <class val_t>
+// struct AtomicVal {
+//   val_t val;
+//   volatile uint8_t status;
 
-//   static const uint64_t lock_mask = 0x0000000000000001;
+//   AtomicVal() : status(0) {}
+//   AtomicVal(val_t val) : val(val), status(0) {}
+//   AtomicVal(AtomicVal *ptr) : val(ptr), status(0) { set_is_ptr(); }
 
-//   ValItem* head;
-//   volatile uint32_t size;
-//   volatile uint64_t status;
-
-//   AtomicMulVerVal() : head(nullptr), size(0), status(0) {}
-//   AtomicMulVerVal(T val) : head(new ValItem(val, nullptr)), size(0), status(0) {}
-//   ~AtomicMulVerVal() {
-//     while (head != nullptr) {
-//       AtomicMulVerVal* p = head;
-//       head = head->next;
-//       delete p;
-//     }
+//   bool is_ptr(uint64_t status) { return status & pointer_mask; }
+//   bool removed(uint64_t status) { return status & removed_mask; }
+//   bool is_ptr() { return status & pointer_mask; }
+//   bool removed() {
+//     if (is_ptr()) return this->val.ptr->removed();
+//     return status & removed_mask;
 //   }
+//   bool locked(uint64_t status) { return status & lock_mask; }
+//   uint64_t get_version(uint64_t status) { return status & version_mask; }
 
-//   bool locked(uint64_t status, uint32_t idx) {
-//     return status & (lock_mask << idx);
-//   }
-
-//   void lock(uint32_t idx) {
+//   void set_is_ptr() { status |= pointer_mask; }
+//   void unset_is_ptr() { status &= ~pointer_mask; }
+//   void set_removed() { status |= removed_mask; }
+//   void lock() {
 //     while (true) {
 //       uint64_t old = status;
-//       uint64_t expected = old & ~(lock_mask << idx);  // expect to be unlocked
-//       uint64_t desired = old | (lock_mask << idx);    // desire to lock
+//       uint64_t expected = old & ~lock_mask;  // expect to be unlocked
+//       uint64_t desired = old | lock_mask;    // desire to lock
 //       if (likely(cmpxchg((uint64_t *)&this->status, expected, desired) ==
 //                  expected)) {
 //         return;
 //       }
 //     }
 //   }
+//   void unlock() { status &= ~lock_mask; }
+//   void incr_version() {
+//     uint64_t version = get_version(status);
+//     UNUSED(version);
+//     status++;
+//     assert(get_version(status) == version + 1);
+//   }
 
-//   void unlock(uint32_t idx) { status &= ~(lock_mask << idx); }
-
-//   bool read(T &val) {
+//   // semantics: atomically read the value and the `removed` flag
+//   bool read(val_t &val) {
 //     while (true) {
 //       uint64_t status = this->status;
 //       memory_fence();
-//       uint32_t cur_idx = this->size;
-//       memory_fence();
-//       ValItem* val_ptr = this->head;
+//       val_union_t val_union = this->val;
 //       memory_fence();
 
-//       if (unlikely(locked(status, idx))) {
+//       uint64_t current_status = this->status;
+//       memory_fence();
+
+//       if (unlikely(locked(current_status))) {  // check lock
 //         continue;
 //       }
 
-//       if (val_ptr == nullptr) {
-//         return false;
-//       } else {
-//         lock(idx);
-//         val_ptr->ref++;
-//         unlock(idx);
-//         val = val_ptr->val;
-//         return true;
+//       if (likely(get_version(status) ==
+//                  get_version(current_status))) {  // check version
+//         if (unlikely(is_ptr(status))) {
+//           assert(!removed(status));
+//           return val_union.ptr->read(val);
+//         } else {
+//           val = val_union.val;
+//           return !removed(status);
+//         }
 //       }
 //     }
 //   }
+//   bool read_without_lock(val_t &val) {
+//     while (true) {
+//       uint64_t status = this->status;
+//       memory_fence();
+//       val_union_t val_union = this->val;
+//       memory_fence();
 
-//   bool update(const T &val) {
+//       uint64_t current_status = this->status;
+//       memory_fence();
+
+//       if (likely(get_version(status) ==
+//                  get_version(current_status))) {  // check version
+//         if (unlikely(is_ptr(status))) {
+//           assert(!removed(status));
+//           return val_union.ptr->read(val);
+//         } else {
+//           val = val_union.val;
+//           return !removed(status);
+//         }
+//       }
+//     }
+//   }
+//   bool update_without_lock(const val_t &val) {
 //     uint64_t status = this->status;
+//     bool res;
+//     if (unlikely(is_ptr(status))) {
+//       assert(!removed(status));
+//       res = this->val.ptr->update(val);
+//     } else if (!removed(status)) {
+//       this->val.val = val;
+//       res = true;
+//     } else {
+//       res = false;
+//     }
+//     memory_fence();
+//     incr_version();
+//     memory_fence();
+//     return res;
+//   }
+//   bool update(const val_t &val) {
 //     lock();
+//     uint64_t status = this->status;
 //     bool res;
 //     if (unlikely(is_ptr(status))) {
 //       assert(!removed(status));
@@ -543,7 +610,6 @@ struct AtomicVal {
 //     unlock();
 //     return res;
 //   }
-
 //   bool remove() {
 //     lock();
 //     uint64_t status = this->status;
@@ -578,7 +644,7 @@ struct AtomicVal {
 //     memory_fence();
 //     unlock();
 //   }
-//   bool read_ignoring_ptr(T &val) {
+//   bool read_ignoring_ptr(val_t &val) {
 //     while (true) {
 //       uint64_t status = this->status;
 //       memory_fence();
@@ -596,7 +662,7 @@ struct AtomicVal {
 //       }
 //     }
 //   }
-//   bool update_ignoring_ptr(const T &val) {
+//   bool update_ignoring_ptr(const val_t &val) {
 //     lock();
 //     uint64_t status = this->status;
 //     bool res;

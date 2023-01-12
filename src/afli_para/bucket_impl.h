@@ -7,13 +7,12 @@ namespace aflipara {
 
 template<typename KT, typename VT>
 Bucket<KT, VT>::Bucket(const KVT* kvs, uint32_t s, const uint32_t capacity, 
-                       uint32_t a, uint32_t b) {
+                       int a, int b) {
   size = s;
-  data = new KVT[capacity];
+  data = new KVT[capacity + 1];
   node_id = a;
   idx = b;
-  // COUT_W_LOCK("Set meta data of the bucket [" << this << "], " << b << "th bucket of " << a << "th node")
-  for (uint32_t i = 0; i < size; ++ i) {
+  for (uint32_t i = 0; i < s; ++ i) {
     data[i] = kvs[i];
   }
 }
@@ -42,9 +41,7 @@ std::pair<KT, VT>* Bucket<KT, VT>::copy() {
 
 template<typename KT, typename VT>
 bool Bucket<KT, VT>::find(KT key, VT& value) {
-  COUT_W_LOCK("Find [" << std::fixed << key << "] in the " << idx << "th bucket [" << this << "] of " << node_id << "th node")
   lock();
-  COUT_W_LOCK("Check the data array [" << data << "], size " << int(size));
   bool found = false;
   for (uint32_t i = 0; i < size; ++ i) {
     if (compare(data[i].first, key)) {
@@ -91,18 +88,16 @@ bool Bucket<KT, VT>::remove(KT key) {
 
 template<typename KT, typename VT>
 bool Bucket<KT, VT>::insert(KVT kv, const uint32_t capacity) {
-  COUT_W_LOCK("Insert [" << std::fixed << kv.first << "] into the " << idx << "th bucket [" << this << "] of " << node_id << "th node")
   lock();
   data[size] = kv;
   size ++;
-  bool need_rebuild = (size == capacity);
+  bool need_rebuild = !(size < capacity);
   unlock();
   return need_rebuild;
 }
 
 template<typename KT, typename VT>
 void Bucket<KT, VT>::lock() {
-  COUT_W_LOCK("Lock the " << idx << "th bucket of " << node_id << "th node")
   uint8_t unlocked = 0, locked = 1;
   while (unlikely(cmpxchgb((uint8_t *)&this->status, unlocked, locked) !=
                   unlocked)) ;
@@ -110,7 +105,6 @@ void Bucket<KT, VT>::lock() {
 
 template<typename KT, typename VT>
 void Bucket<KT, VT>::unlock() {
-  COUT_W_LOCK("Unlock the " << idx << "th bucket of " << node_id << "th node")
   status = 0;
 }
 

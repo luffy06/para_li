@@ -9,15 +9,15 @@ template<typename KT, typename VT>
 class Bucket {
 typedef std::pair<KT, VT> KVT;
 public:
-  uint32_t node_id = 531;
-  uint32_t idx = 531;
+  int node_id;
+  int idx;
   KVT* data;
   uint8_t size;
   volatile uint8_t status = 0;
 
 public:
   Bucket() = delete;
-  explicit Bucket(const KVT* kvs, uint32_t size, const uint32_t capacity, uint32_t a, uint32_t b);
+  explicit Bucket(const KVT* kvs, uint32_t size, const uint32_t capacity, int a, int b);
   ~Bucket();
 
   uint8_t get_size();

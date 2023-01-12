@@ -30,19 +30,12 @@ void AFLIPara<KT, VT>::bulk_load(const KVT* kvs, uint32_t size) {
   assert_p(root == nullptr, "The index must be empty before bulk loading");
   root = new TNodePara<KT, VT>(hyper_para.num_nodes ++);
   // adapt_bucket_size(kvs, size, hyper_para);
-  COUT_W_LOCK("Bucket threshold " << hyper_para.max_bucket_size)
   root->build(kvs, size, 1, hyper_para);
 }
 
 template<typename KT, typename VT>
 bool AFLIPara<KT, VT>::find(KT key, VT& value) {
-  COUT_W_LOCK("Start to find, " << std::fixed << key << ", " << (pool != nullptr ? pool->get_tasks_total() : 0) << " tasks in the queue")
   bool res = root->find(key, value);
-  COUT_W_LOCK("Finish finding, " << std::fixed << key)
-  Entry<KT, VT> entry;
-  root->entries[37397851].read(entry);
-  assert(entry.bucket->node_id == 0);
-  assert(entry.bucket->idx == 37397851);
   return res;
 }
 
@@ -58,27 +51,17 @@ bool AFLIPara<KT, VT>::remove(KT key) {
 
 template<typename KT, typename VT>
 void AFLIPara<KT, VT>::insert(KVT kv) {
-  COUT_W_LOCK("Start to insert, " << std::fixed << kv.first)
   RebuildInfo<KT, VT>* ri = root->insert(kv, 1, hyper_para);
-  COUT_W_LOCK("Finish insertion, " << std::fixed << kv.first << ", " << (pool != nullptr ? pool->get_tasks_total() : 0) << " tasks in the queue")
   if (ri != nullptr) {
-    COUT_W_LOCK("Start to rebuild the " << ri->idx << "th bucket of " << ri->node_ptr->id << "th node, depth " << ri->depth)
     if (pool != nullptr) {
-      COUT_W_LOCK("Submit the task of rebuilding the " << ri->idx << "th bucket")
       auto future = pool->submit(&AFLIPara<KT, VT>::rebuild, this, ri);
       if (pool->get_tasks_queued() > 50) {
-        COUT_W_LOCK("Too many background tasks, wait!")
         future.wait();
       }
     } else { // No background threads, directly rebuild
       AFLIPara::rebuild(ri);
     }
-    COUT_W_LOCK("Finish rebuilding the " << ri->idx << "th bucket of " << ri->node_ptr->id << "th node, depth " << ri->depth)
   }
-  Entry<KT, VT> entry;
-  root->entries[37397851].read(entry);
-  assert(entry.bucket->node_id == 0);
-  assert(entry.bucket->idx == 37397851);
 }
 
 template<typename KT, typename VT>
@@ -115,26 +98,24 @@ void AFLIPara<KT, VT>::rebuild(RebuildInfo<KT, VT>* ri) {
   TNodePara<KT, VT>* node = ri->node_ptr;
   uint32_t depth = ri->depth;
   uint32_t idx = ri->idx;
-  Entry<KT, VT> entry;
-  node->entries[idx].read_without_lock(entry);
-  COUT_W_LOCK("T1: Rebuild the " << idx << "th bucket [" << entry.bucket << "] of " << node->id << "th node [" << node << "], depth " << depth)
-  uint32_t bucket_size = entry.bucket->get_size();
-  COUT_W_LOCK("T1: " << idx << "th bucket's size " << bucket_size)
-  KVT* kvs = entry.bucket->copy();
+  Bucket<KT, VT>* bucket;
+  node->entries[idx].read_bucket_without_lock(bucket);
+  assert(bucket->idx == idx);
+  assert(bucket->node_id == node->id);
+  uint32_t bucket_size = bucket->get_size();
+  KVT* kvs = bucket->copy();
   std::sort(kvs, kvs + bucket_size, 
     [](auto const& a, auto const& b) {
       return a.first < b.first;
   });
-  delete entry.bucket;
-  entry.child = new TNodePara<KT, VT>(ri->hyper_para.num_nodes++);
-  entry.child->build(kvs, bucket_size, ri->depth + 1, ri->hyper_para);
+  delete bucket;
+  TNodePara<KT, VT>* child = new TNodePara<KT, VT>(ri->hyper_para.num_nodes++);
+  child->build(kvs, bucket_size, ri->depth + 1, ri->hyper_para);
   node->set_entry_type(idx, kNode);
-  COUT_W_LOCK("T1: Unlock the " << idx << "th bucket [" << entry.bucket << "] of " << node->id << "th node ["<< node << "], depth " << depth)
-  node->entries[idx].update_without_lock(entry);
+  node->entries[idx].update_child_without_lock(child);
   node->entries[idx].unlock();
   delete[] kvs;
   delete ri;
-  COUT_W_LOCK("T1: Finish bg work")
 }
 
 template<typename KT, typename VT>

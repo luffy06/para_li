@@ -23,7 +23,6 @@ TNodePara<KT, VT>::TNodePara(uint32_t id) {
   bitmap0 = bitmap1 = nullptr;
   entries = nullptr;
   bitmap_lock = nullptr;
-  // COUT_W_LOCK("Build a new node [" << id << "]")
 }
 
 template<typename KT, typename VT>
@@ -41,24 +40,26 @@ bool TNodePara<KT, VT>::find(KT key, VT& value, uint32_t depth) {
   uint32_t idx = std::min(std::max(model->predict(key), 0L), 
                           static_cast<int64_t>(capacity - 1));
   uint8_t type = entry_type(idx);
-  COUT_W_LOCK("T0: Search the " << idx << "th slot")
-  Entry<KT, VT> entry;
-  entries[idx].read(entry);
   if (type == kData) {
-    COUT_W_LOCK("T0: Found [" << std::fixed << key << "] in the " << idx << "th slot of " << id << "th node, depth " << depth)
-    if (compare(entry.kv.first, key)) {
-      value = entry.kv.second;
+    KVT kv;
+    entries[idx].read_kv(kv);
+    if (compare(kv.first, key)) {
+      value = kv.second;
       return true;
     } else {
       return false;
     }
   } else if (type == kBucket) {
-    COUT_W_LOCK("T0: Try to find [" << std::fixed << key << "] in the " << idx << "th bucket of " << id << "th node, depth " << depth << ", address [" << entry.bucket << "]")
-    bool res = entry.bucket->find(key, value);
-    COUT_W_LOCK("T0: Found [" << std::fixed << key << "] in the " << idx << "th bucket of " << id << "th node, depth " << depth)
+    Bucket<KT, VT>* bucket = nullptr;
+    entries[idx].read_bucket(bucket);
+    assert_p(bucket != nullptr, "Null bucket");
+    bool res = bucket->find(key, value);
     return res;
   } else if (type == kNode) {
-    return entry.child->find(key, value, depth + 1);
+    TNodePara<KT, VT>* child = nullptr;
+    entries[idx].read_child(child);
+    assert_p(child != nullptr, "Null child node");
+    return child->find(key, value, depth + 1);
   } else {
     return false;
   }
@@ -70,15 +71,23 @@ bool TNodePara<KT, VT>::update(KVT kv) {
   uint32_t idx = std::min(std::max(model->predict(kv.first), 0L), 
                           static_cast<int64_t>(capacity - 1));
   uint8_t type = entry_type(idx);
-  Entry<KT, VT> entry;
-  entries[idx].read(entry);
-  if (type == kData && compare(entry.kv.first, kv.first)) {
-    entries[idx].update(Entry<KT, VT>(kv));
-    return true;
+  if (type == kData) {
+    KVT stored_kv;
+    entries[idx].read_kv(kv);
+    if (compare(stored_kv.first, kv.first)) {
+      entries[idx].update_kv(kv);
+      return true;
+    } else {
+      return false;
+    }
   } else if (type == kBucket) {
-    return entry.bucket->update(kv);
+    Bucket<KT, VT>* bucket = nullptr;
+    entries[idx].read_bucket(bucket);
+    return bucket->update(kv);
   } else if (type == kNode) {
-    return entry.child->update(kv);
+    TNodePara<KT, VT>* child = nullptr;
+    entries[idx].read_child(child);
+    return child->update(kv);
   } else {
     return false;
   }
@@ -90,15 +99,23 @@ bool TNodePara<KT, VT>::remove(KT key) {
   uint32_t idx = std::min(std::max(model->predict(key), 0L), 
                           static_cast<int64_t>(capacity - 1));
   uint8_t type = entry_type(idx);
-  Entry<KT, VT> entry;
-  entries[idx].read(entry);
-  if (type == kData && compare(entry.kv.first, key)) {
-    set_entry_type(idx, kNone);
-    return true;
+  if (type == kData) {
+    KVT kv;
+    entries[idx].read_kv(kv);
+    if (compare(kv.first, key)) {
+      set_entry_type(idx, kNone);
+      return true;
+    } else {
+      return false;
+    }
   } else if (type == kBucket) {
-    return entry.bucket->remove(key);
+    Bucket<KT, VT>* bucket = nullptr;
+    entries[idx].read_bucket(bucket);
+    return bucket->remove(key);
   } else if (type == kNode) {
-    return entry.child->remove(key);;
+    TNodePara<KT, VT>* child = nullptr;
+    entries[idx].read_child(child);
+    return child->remove(key);;
   } else {
     return false;
   }
@@ -110,31 +127,32 @@ RebuildInfo<KT, VT>* TNodePara<KT, VT>::insert(KVT kv, uint32_t depth,
   uint32_t idx = std::min(std::max(model->predict(kv.first), 0L), 
                           static_cast<int64_t>(capacity - 1));
   uint8_t type = entry_type(idx);
-  Entry<KT, VT> entry;
-  entries[idx].read(entry);
   if (type == kNone) {
-    COUT_W_LOCK("T0: Insert [" << std::fixed << kv.first << "] into the " << idx << "th slot of " << id << "th node")
     set_entry_type(idx, kData);
-    entries[idx].update(Entry<KT, VT>(kv));
+    entries[idx].update_kv(kv);
     return nullptr;
   } else if (type == kData || type == kBucket) {
+    Bucket<KT, VT>* bucket = nullptr;
     if (type == kData) {
+      KVT stored_kv;
+      entries[idx].read_kv(stored_kv);
+      bucket = new Bucket<KT, VT>(&stored_kv, 1, hyper_para.max_bucket_size, 
+                                  id, idx);
+      entries[idx].update_bucket(bucket);
       set_entry_type(idx, kBucket);
-      entry.bucket = new Bucket<KT, VT>(&entry.kv, 1, hyper_para.max_bucket_size, id, idx);
-      entries[idx].update(entry);
-      COUT_W_LOCK("T0: Build the " << idx << "th slot into a bucket [" << entry.bucket << "] of " << id << "th node [" << this << "]")
     }
-    bool need_rebuild = entry.bucket->insert(kv, hyper_para.max_bucket_size);
+    entries[idx].read_bucket(bucket);
+    bool need_rebuild = bucket->insert(kv, hyper_para.max_bucket_size);
     if (need_rebuild) {
-      COUT_W_LOCK("T0: Prepare background task of rebuilding the " << idx << "th bucket [" << entry.bucket << "] of " << id << "th node [" << this << "], depth " << depth)
       entries[idx].lock();
       return new RebuildInfo(this, depth, idx, hyper_para);
     } else {
-      COUT_W_LOCK("T0: Insert [" << std::fixed << kv.first << "] into the " << idx << "th bucekt")
       return nullptr;
     }
   } else {
-    return entry.child->insert(kv, depth + 1, hyper_para);
+    TNodePara<KT, VT>* child = nullptr;
+    entries[idx].read_child(child);
+    return child->insert(kv, depth + 1, hyper_para);
   }
 }
 
@@ -187,22 +205,24 @@ void TNodePara<KT, VT>::destroy_self() {
   model = nullptr;
   for (uint32_t i = 0; i < capacity; ++ i) {
     uint8_t type_i = entry_type(i);
-    Entry<KT, VT> entry_i;
-    entries[i].read(entry_i);
     if (type_i == kBucket) {
-      delete entry_i.bucket;
+      Bucket<KT, VT>* bucket = nullptr;
+      entries[i].read_bucket(bucket);
+      delete bucket;
     } else if (type_i == kNode) {
+      TNodePara<KT, VT>* child = nullptr;
+      entries[i].read_child(child);
       uint32_t j = i;
       for (; j < capacity; ++ j) {
         uint8_t type_j = entry_type(j);
-        Entry<KT, VT> entry_j;
-        entries[j].read(entry_j);
+        TNodePara<KT, VT>* sibling = nullptr;
+        entries[j].read_child(sibling);
         if (type_j != kNode || 
-            entry_j.child != entry_i.child) {
+            child != sibling) {
           break;
         }
       }
-      delete entry_i.child;
+      delete child;
       i = j - 1;
     }
   }
@@ -227,7 +247,7 @@ void TNodePara<KT, VT>::build(const KVT* kvs, uint32_t size, uint32_t depth,
   capacity = ci->max_size;
   bitmap0 = new BIT_TYPE[bit_len];
   bitmap1 = new BIT_TYPE[bit_len];
-  entries = new AtomicVal<Entry<KT, VT>>[ci->max_size];
+  entries = new AtomicEntry<KT, VT>[ci->max_size];
   bitmap_lock = new uint8_t[bit_len];
   memset(bitmap0, 0, sizeof(BIT_TYPE) * bit_len);
   memset(bitmap1, 0, sizeof(BIT_TYPE) * bit_len);
@@ -242,15 +262,13 @@ void TNodePara<KT, VT>::build(const KVT* kvs, uint32_t size, uint32_t depth,
       continue;
     } else if (c == 1) {
       set_entry_type(p, kData);
-      entries[p].update(Entry<KT, VT>(kvs[j]));
-      // COUT_W_LOCK("T0: build " << p << "th slot of " << id << "th node as a data entry")
+      entries[p].update_kv(kvs[j]);
       j = j + c;
     } else if (c <= hyper_para.max_bucket_size) {
       set_entry_type(p, kBucket);
       Bucket<KT, VT>* b = new Bucket<KT, VT>(kvs + j, c, 
-                                            hyper_para.max_bucket_size, id, p);
-      entries[p].update(Entry<KT, VT>(b));
-      // COUT_W_LOCK("T0: build " << p << "th slot of " << id << "th node as a bucket [" << b << "]")
+                                             hyper_para.max_bucket_size, id, p);
+      entries[p].update_bucket(b);
       j = j + c;
     } else {
       uint32_t k = i + 1;
@@ -271,19 +289,19 @@ void TNodePara<KT, VT>::build(const KVT* kvs, uint32_t size, uint32_t depth,
           uint32_t c_k = ci->conflicts[u];
           set_entry_type(p_k, kNode);
           TNodePara<KT, VT>* child = new TNodePara<KT, VT>(hyper_para.num_nodes ++);
-          entries[p_k].update(Entry<KT, VT>(child));
+          entries[p_k].update_child(child);
           child->build(kvs + j, c_k, depth + 1, hyper_para);
           j = j + c_k;
         }
       } else {
         set_entry_type(p, kNode);
         TNodePara<KT, VT>* child = new TNodePara<KT, VT>(hyper_para.num_nodes ++);
-        entries[p].update(Entry<KT, VT>(child));
+        entries[p].update_child(child);
         child->build(kvs + j, seg_size, depth + 1, hyper_para);
         for (uint32_t u = i; u < k; ++ u) {
           uint32_t p_k = ci->positions[u];
           set_entry_type(p_k, kNode);
-          entries[p_k].update(Entry<KT, VT>(child));
+          entries[p_k].update_child(child);
         }
         j = j + seg_size;
       }

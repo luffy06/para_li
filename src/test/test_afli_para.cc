@@ -41,29 +41,19 @@ void* run_requests(void* param) {
   thread_param.start_time = std::chrono::high_resolution_clock::now();
   for (uint32_t i = start_idx; i < end_idx && i < reqs.size(); ++ i) {
     Request<KT, VT>& req = reqs[i];
-    bool print = false;
-    if ((i - start_idx) % 40000 == 0) {
-      print = true;
-    }
     if (req.op == kQuery) {
-      // if (print) {
-        COUT_W_LOCK("\nProgress Read " << i - start_idx << "/" << end_idx - start_idx)
-      // }
       VT value;
       bool found = afli->find(req.kv.first, value);
     } else if (req.op == kInsert) {
-      // if (print) {
-        COUT_W_LOCK("\nProgress Insert " << i - start_idx << "/" << end_idx - start_idx)
-      // }
       afli->insert(req.kv);
     }
-    if (print) {
-      auto end_time = std::chrono::high_resolution_clock::now();
-      double sum_latency = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                    end_time - thread_param.start_time).count();
-      std::cout << "Throughput\t" << (i - start_idx) * 1000. / (sum_latency) 
-          << " million ops/sec" << std::endl;
-    }
+    // if ((i - start_idx) % 100000 == 0) {
+    //   auto end_time = std::chrono::high_resolution_clock::now();
+    //   double sum_latency = std::chrono::duration_cast<std::chrono::nanoseconds>(
+    //                                 end_time - thread_param.start_time).count();
+    //   std::cout << "Throughput\t" << (i - start_idx) * 1000. / (sum_latency) 
+    //       << " million ops/sec" << std::endl;
+    // }
   }
   thread_param.end_time = std::chrono::high_resolution_clock::now();
   ready_threads --;
@@ -137,14 +127,11 @@ void test_workload(std::string workload_path) {
       exit(-1);
     }
   }
-  TT start_time = thread_params[0].start_time;
-  TT end_time = thread_params[0].end_time;
+  double sum_latency = 0;
   for (uint32_t i = 0; i < num_threads; ++ i) {
-    start_time = std::min(start_time, thread_params[i].start_time);
-    end_time = std::max(end_time, thread_params[i].end_time);
+    double latency = std::chrono::duration_cast<std::chrono::nanoseconds>(thread_params[i].end_time - thread_params[i].start_time).count();
+    sum_latency = std::max(sum_latency, latency);
   }
-  double sum_latency = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                        end_time - start_time).count();
   std::cout << "Overall Throughput\t" << reqs.size() * 1000. / (sum_latency) 
             << " million ops/sec" << std::endl;
 }
@@ -224,25 +211,116 @@ void test_raw_dataset(std::string data_path) {
   std::cout << "Test Success" << std::endl;  
 }
 
-int main(int argc, char* argv[]) {
-  if (argc < 5) {
-    std::cout << "No enough parameters" << std::endl;
-    std::cout << "Please input: test_index (data path) (test type) " 
-              << "(number of threads) (number of bg threads)" << std::endl;
-    exit(-1);
+void test_synthetic(int num_data) {
+  std::vector<std::pair<KT, VT>> init_data;
+  std::vector<std::pair<KT, VT>> ins_data;
+  int num_init_data = num_data / 2;
+  int num_ins_data = num_data - num_init_data;
+  init_data.reserve(num_init_data);
+  ins_data.reserve(num_ins_data);
+  
+  std::vector<int> idx;
+  idx.reserve(num_data);
+  for (int i = 0; i < num_data; ++ i) {
+    idx.push_back(i);
   }
-  std::string data_path = std::string(argv[1]);
-  std::string test_type = std::string(argv[2]);
-  num_threads = std::strtoul(argv[3], nullptr, 10);
-  num_bg = std::strtoul(argv[4], nullptr, 10);
-  std::cout << "# threads\t" << num_threads << std::endl;
+  aflipara::shuffle(idx, 0, idx.size());
+  for (int i = 0; i < num_init_data; ++ i) {
+    init_data.push_back({idx[i], idx[i]});
+  }
+  for (int i = num_init_data; i < num_data; ++ i) {
+    ins_data.push_back({idx[i], idx[i]});
+  }
+  std::sort(init_data.begin(), init_data.end(), 
+    [](const auto& a, const auto& b) {
+      return a.first < b.first;
+  });
+
+  AFLIPara<KT, VT> afli(num_bg);
+  afli.bulk_load(init_data.data(), init_data.size());
+  
+  for (int i = 0; i < init_data.size(); ++ i) {
+    VT val = 0;
+    afli.find(init_data[i].first, val);
+    if (val != init_data[i].second) {
+      std::cout << "Find {" << init_data[i].first << ", " << init_data[i].second 
+                << "}, but got {" << val << "}" << std::endl;
+      exit(-1);
+    }
+  }
+  
+  for (int i = 0; i < ins_data.size(); ++ i) {
+    afli.insert(ins_data[i]);
+  }
+  
+  for (int i = 0; i < ins_data.size(); ++ i) {
+    VT val = 0;
+    afli.find(ins_data[i].first, val);
+    if (val != ins_data[i].second) {
+      std::cout << "Find {" << ins_data[i].first << ", " << ins_data[i].second 
+                << "}, but got {" << val << "}" << std::endl;
+      exit(-1);
+    }
+  }
+
+  for (int i = 0; i < init_data.size(); ++ i) {
+    VT val = 0;
+    afli.find(init_data[i].first, val);
+    if (val != init_data[i].second) {
+      std::cout << "Find {" << init_data[i].first << ", " << init_data[i].second 
+                << "}, but got {" << val << "}" << std::endl;
+      exit(-1);
+    }
+  }
+  std::cout << "Success" << std::endl;
+}
+
+int main(int argc, char* argv[]) {
+  po::options_description desc("Allowed options");
+  desc.add_options()
+    ("help", (tostr("example: ./test_afli_para ") 
+     + "--data_path books-200M-20R-zipf.bin " 
+     + "--test_type workload --num_threads 1 --num_bg 2").data())
+    ("data_path", po::value<std::string>(), 
+     "the path of data")
+    ("test_type", po::value<std::string>(), 
+     "the test type")
+    ("num_threads", po::value<uint32_t>(), 
+     "the number of user threads")
+    ("num_bg", po::value<uint32_t>(), 
+     "the number of background threads")
+    ("num_data", po::value<uint32_t>(), 
+     "the number of synthetic data")
+  ;
+
+  po::variables_map vm;
+  try {
+    po::store(po::parse_command_line(argc, argv, desc), vm);
+  } catch (...) {
+    COUT_ERR("Unrecognized parameters, please use --help");
+  }
+  po::notify(vm);
+
+  if (vm.count("help")) {
+    COUT_INFO(desc)
+    return 0;
+  }
+
+  check_options(vm, {"data_path", "test_type", "num_threads", "num_bg"});
+  std::string data_path = vm["data_path"].as<std::string>();
+  std::string test_type = vm["test_type"].as<std::string>();
+  num_threads = vm["num_threads"].as<uint32_t>();
+  num_bg = vm["num_bg"].as<uint32_t>();
+  COUT_INFO("# user threads: " << num_threads << "\t# bg threads: " << num_bg)
   if (test_type == "raw") {
     test_raw_dataset(data_path);
   } else if (test_type == "workload") {
     test_workload(data_path);
+  } else if (test_type == "synthetic") {
+    int num_data = vm["num_data"].as<uint32_t>();
+    test_synthetic(num_data);
   } else {
-    std::cout << "Unsupported test type\t" << test_type << std::endl;
-    exit(-1);
+    COUT_ERR("Unsupported test type\t" << test_type)
   }
   return 0;
 }

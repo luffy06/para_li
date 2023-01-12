@@ -46,9 +46,8 @@ ConflictsInfo* build_linear_model(const std::pair<KT, VT>* kvs, uint32_t size,
   KT min_key = kvs[0].first;
   KT max_key = kvs[size - 1].first;
   if (compare(min_key, max_key)) {
-    std::cout << "All keys used to build the linear model are the same." 
-              << std::endl;
-    exit(-1);
+    COUT_ERR("Range [" << min_key << ", " << max_key << "], Size: " << size 
+             << ", all keys used to build the linear model are the same.")
   }
   KT key_space = max_key - min_key;
 
@@ -70,10 +69,9 @@ ConflictsInfo* build_linear_model(const std::pair<KT, VT>* kvs, uint32_t size,
               << "small" << std::endl;
     exit(-1);
   } else {
-    double slope = model->slope_ * size / key_space;
-    double intercept = model->intercept_ - model->slope_ * min_key * size / key_space;
-    model->slope_ = slope;
-    model->intercept_ = intercept;
+    model->slope_ = model->slope_ * size / key_space;
+    model->intercept_ = -model->slope_ * (min_key) + 0.5;
+    assert_p(model->predict(min_key) == 0, "The first prediction must be zero");
     int64_t predicted_size = model->predict(max_key) + 1;
     if (predicted_size > 1) {
       capacity = std::min(predicted_size, static_cast<int64_t>(capacity));
