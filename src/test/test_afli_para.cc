@@ -1,25 +1,34 @@
-#include "afli_para/afli_para_impl.h"
-#include "util/common.h"
-#include "util/workload.h"
+#include "afli_para_impl.h"
+#include "common.h"
+#include "workload.h"
 
-typedef double KT;
-typedef long long int VT;
-typedef std::pair<KT, VT> KVT;
 typedef std::chrono::time_point<std::chrono::high_resolution_clock> TT;
+
+namespace po = boost::program_options;
+
+void check_options(const po::variables_map& vm, 
+                   const std::vector<std::string>& options) {
+  for (auto op : options) {
+    if (!vm.count(op)) {
+      std::cout << "--" << op << " option required" << std::endl;
+    }
+  }
+}
 
 using namespace aflipara;
 
 volatile bool running = false;
 std::atomic<size_t> ready_threads(0);
 
-uint32_t num_threads = 1;
+uint32_t num_workers = 1;
 uint32_t num_bg = 1;
 
 template<typename KT, typename VT>
 struct ThreadParam {
   uint32_t id;
   AFLIPara<KT, VT>* index;
-  std::vector<Request<KT, VT>>* reqs;
+  std::vector<Request<KT>>* reqs;
+  uint32_t num_done_reqs;
   TT start_time;
   TT end_time;
 };
@@ -29,117 +38,111 @@ void* run_requests(void* param) {
   ThreadParam<KT, VT>& thread_param = *((ThreadParam<KT, VT>*)param);
   uint32_t thread_id = thread_param.id;
   AFLIPara<KT, VT>* afli = thread_param.index;
-  std::vector<Request<KT, VT>>& reqs = *(thread_param.reqs);
+  std::vector<Request<KT>>& reqs = *(thread_param.reqs);
 
-  uint32_t reqs_per_thread = std::ceil(reqs.size() / num_threads);
+  uint32_t reqs_per_thread = std::ceil(reqs.size() / num_workers);
   uint32_t start_idx = thread_id * reqs_per_thread;
   uint32_t end_idx = (thread_id + 1) * reqs_per_thread;
 
   ready_threads ++;
   while (!running) ;
 
-  thread_param.start_time = std::chrono::high_resolution_clock::now();
+  VT dummy_value = 2022;
+  thread_param.start_time = TIME_LOG;
   for (uint32_t i = start_idx; i < end_idx && i < reqs.size(); ++ i) {
-    Request<KT, VT>& req = reqs[i];
+    Request<KT>& req = reqs[i];
     if (req.op == kQuery) {
       VT value;
-      bool found = afli->find(req.kv.first, value);
+      bool found = afli->find(req.key, value);
     } else if (req.op == kInsert) {
-      afli->insert(req.kv);
+      afli->insert({req.key, dummy_value});
     }
-    // if ((i - start_idx) % 100000 == 0) {
-    //   auto end_time = std::chrono::high_resolution_clock::now();
-    //   double sum_latency = std::chrono::duration_cast<std::chrono::nanoseconds>(
-    //                                 end_time - thread_param.start_time).count();
-    //   std::cout << "Throughput\t" << (i - start_idx) * 1000. / (sum_latency) 
-    //       << " million ops/sec" << std::endl;
-    // }
+    thread_param.num_done_reqs ++;
   }
-  thread_param.end_time = std::chrono::high_resolution_clock::now();
+  thread_param.end_time = TIME_LOG;
   ready_threads --;
   pthread_exit(nullptr);
 }
 
+template<typename KT, typename VT>
 void test_workload(std::string workload_path) {
-  std::vector<std::pair<KT, VT>> init_data;
-  std::vector<Request<KT, VT>> reqs;
-  load_workloads(workload_path, init_data, reqs);
-  auto bulk_load_start = std::chrono::high_resolution_clock::now();
+  std::vector<KT> init_keys;
+  std::vector<std::pair<KT, VT>> init_kvs;
+  std::vector<Request<KT>> reqs;
+  load_workload(workload_path, init_keys, reqs);
+  init_kvs.reserve(init_keys.size());
+  for (uint32_t i = 0; i < init_keys.size(); ++ i) {
+    init_kvs.push_back({init_keys[i], i});
+  }
+  
+  COUT_INFO("# loading data [" << init_kvs.size() << "]")
+  COUT_INFO("# requests [" << reqs.size() << "]")
+
+  auto bulk_load_start = TIME_LOG;
   AFLIPara<KT, VT> afli(num_bg);
-  auto bulk_load_mid = std::chrono::high_resolution_clock::now();
-  afli.bulk_load(init_data.data(), init_data.size());
+  auto bulk_load_mid = TIME_LOG;
+  afli.bulk_load(init_kvs.data(), init_kvs.size());
   // afli.print_statistics();
-  auto bulk_load_end = std::chrono::high_resolution_clock::now();
-  double construct_index_time = 
-    std::chrono::duration_cast<std::chrono::nanoseconds>(bulk_load_mid 
-                                                  - bulk_load_start).count();
-  double bulk_load_index_time = 
-    std::chrono::duration_cast<std::chrono::nanoseconds>(bulk_load_end 
-                                                  - bulk_load_mid).count();
+  auto bulk_load_end = TIME_LOG;
+  double construct_index_time = TIME_IN_SECOND(bulk_load_start, bulk_load_mid);
+  double bulk_load_index_time = TIME_IN_SECOND(bulk_load_mid, bulk_load_end);
 
-  std::cout << "# REQ\t" << reqs.size() << std::endl;
-  std::cout << std::fixed << std::setprecision(6) << "Bulk loading\t" 
-            << construct_index_time / 1e9 << " sec\t"
-            << bulk_load_index_time / 1e9 << " sec" << std::endl;
-  std::cout << "# Nodes\t" << afli.hyper_para.num_nodes << std::endl;
+  COUT_INFO("Bulk loading\t" << construct_index_time << " sec\t"
+            << bulk_load_index_time << " sec")
+  COUT_INFO("# Nodes\t" << afli.hyper_para.num_nodes)
 
-  // reqs.resize(400000);
-  pthread_t threads[num_threads];
-  ThreadParam<KT, VT> thread_params[num_threads];
+  pthread_t threads[num_workers];
+  ThreadParam<KT, VT> thread_params[num_workers];
 
   running = false;
-  for (uint32_t i = 0; i < num_threads; ++ i) {
+  for (uint32_t i = 0; i < num_workers; ++ i) {
     thread_params[i].id = i;
     thread_params[i].index = &afli;
     thread_params[i].reqs = &reqs;
+    thread_params[i].num_done_reqs = 0;
     int ret = pthread_create(&threads[i], nullptr, run_requests<KT, VT>, 
-                              (void *)&thread_params[i]);
-    if (ret) {
-      std::cout << "Error Code\t" << ret << " of Thread-" << i << std::endl;
-      exit(-1);
-    }
+                             (void *)&thread_params[i]);
+    ASSERT_WITH_MSG(!ret, "Error Code\t" << ret << " of Thread-" << i)
   }
 
-  while (ready_threads < num_threads) {
+  while (ready_threads < num_workers) {
     sleep(1);
   }
 
-  uint32_t interval = 10;
-  std::vector<size_t> tput_history(num_threads, 0);
+  std::vector<size_t> tput_history(num_workers, 0);
   running = true;
   while (ready_threads > 0) {
-    // std::this_thread::sleep_for(std::chrono::milliseconds(interval));
-    // sum_latency += interval;
-    // uint32_t tot_num_reqs = 0;
-    // for (uint32_t i = 0; i < num_threads; ++ i) {
-    //   tot_num_reqs += thread_params[i].num_reqs - tput_history[i];
-    //   tput_history[i] = thread_params[i].num_reqs;
-    // }
-    // std::cout << "Throughput\t" << tot_num_reqs / (1000. * interval) << " million ops/sec" << std::endl;
-    // std::cout << tot_num_reqs / (1000. * interval) << std::endl;
+    sleep(1);
+    uint32_t tot_num_reqs = 0;
+    for (uint32_t i = 0; i < num_workers; ++ i) {
+      tot_num_reqs += thread_params[i].num_done_reqs - tput_history[i];
+      tput_history[i] = thread_params[i].num_done_reqs;
+    }
+    COUT_INFO("Throughput: " << tot_num_reqs / 1e6 << " million ops/sec, " 
+              << "latency: " << 1e9 / tot_num_reqs << " ns")
   }
   running = false;
   
-  for (uint32_t i = 0; i < num_threads; ++ i) {
+  for (uint32_t i = 0; i < num_workers; ++ i) {
     int rc = pthread_join(threads[i], nullptr);
-    if (rc) {
-      std::cout << "Return Code\t" << rc << " of Thread-" << i << std::endl;
-      exit(-1);
-    }
+    ASSERT_WITH_MSG(!rc, "Return Code\t" << rc << " of Thread-" << i)
   }
   double sum_latency = 0;
-  for (uint32_t i = 0; i < num_threads; ++ i) {
-    double latency = std::chrono::duration_cast<std::chrono::nanoseconds>(thread_params[i].end_time - thread_params[i].start_time).count();
+  for (uint32_t i = 0; i < num_workers; ++ i) {
+    double latency = TIME_IN_NANO_SECOND(thread_params[i].start_time, 
+                                         thread_params[i].end_time);
     sum_latency = std::max(sum_latency, latency);
   }
-  std::cout << "Overall Throughput\t" << reqs.size() * 1000. / (sum_latency) 
-            << " million ops/sec" << std::endl;
+  COUT_INFO("Overall Throughput: " << reqs.size() * 1e3 / sum_latency
+            << " million ops/sec, average latency: " 
+            << sum_latency / reqs.size() << " ns")
 }
 
+template<typename KT, typename VT>
 void test_raw_dataset(std::string data_path) {
-  std::vector<std::pair<KT, VT>> kvs;
-  load_source_data(data_path, kvs);
-  uint32_t num_keys = kvs.size();
+  std::vector<KT> keys;
+  load_keyset(data_path, keys);
+  uint32_t num_keys = keys.size();
   AFLIPara<KT, VT> afli(num_bg);
   std::vector<uint32_t> idx;
   for (uint32_t i = 0; i < num_keys; ++ i) {
@@ -152,83 +155,70 @@ void test_raw_dataset(std::string data_path) {
   insert_data.reserve(num_keys - num_keys / 2);
   for (uint32_t i = 0; i < num_keys; ++ i) {
     if (i < num_keys / 2) {
-      init_data.push_back(kvs[idx[i]]);
+      init_data.push_back({keys[idx[i]], i});
     } else {
-      insert_data.push_back(kvs[idx[i]]);
+      insert_data.push_back({keys[idx[i]], i});
     }
   }
   std::sort(init_data.begin(), init_data.end(), 
     [](auto const& a, auto const& b) {
       return a.first < b.first;
   });
-  // DEBUG_KEY = init_data[353870].first;
   // Test bulk loading
-  std::cout << "Test Bulk Loading, Number of Keys\t" 
-            << init_data.size() << std::endl;
+  COUT_INFO("Test Bulk Loading, Number of Keys\t" << init_data.size())
   afli.bulk_load(init_data.data(), init_data.size());
   afli.print_statistics();
 
   // Test query
-  std::cout << "Test Querying" << std::endl;
-  for (int i = 0; i < init_data.size(); ++ i) {
+  COUT_INFO("Test Querying")
+  for (uint32_t i = 0; i < init_data.size(); ++ i) {
     VT value;
     bool found = afli.find(init_data[i].first, value);
-    if (!found) {
-      std::cout << std::fixed << std::setprecision(6) 
-                << "Cannot find " << i << "th key (" 
-                << init_data[i].first << ")" << std::endl;
-      exit(-1);
-    }
+    ASSERT_WITH_MSG(found, "Cannot find " << i << "th key (" 
+                    << init_data[i].first << ")")
   }
   // Test insert
-  std::cout << "Test Insertion" << std::endl;
-  for (int i = 0; i < insert_data.size(); ++ i) {
+  COUT_INFO("Test Insertion")
+  for (uint32_t i = 0; i < insert_data.size(); ++ i) {
     afli.insert(insert_data[i]);
   }
   afli.print_statistics();
   // Test query
-  std::cout << "Test Querying After Insertion" << std::endl;
-  for (int i = 0; i < init_data.size(); ++ i) {
+  COUT_INFO("Test Querying After Insertion")
+  for (uint32_t i = 0; i < init_data.size(); ++ i) {
     VT value;
     bool found = afli.find(init_data[i].first, value);
-    if (!found) {
-      std::cout << std::fixed << std::setprecision(6) 
-                << "Cannot find " << i << "th loading key (" 
-                << init_data[i].first << ")" << std::endl;
-      exit(-1);
-    }
+    ASSERT_WITH_MSG(found, "Cannot find " << i << "th loading key (" 
+                    << init_data[i].first << ")")
   }
-  for (int i = 0; i < insert_data.size(); ++ i) {
+  for (uint32_t i = 0; i < insert_data.size(); ++ i) {
     VT value;
     bool found = afli.find(insert_data[i].first, value);
-    if (!found) {
-      std::cout << std::fixed << std::setprecision(6) 
-                << "Cannot find " << i << "th inserted key (" 
-                << insert_data[i].first << ")" << std::endl;
-      exit(-1);
-    }
+    ASSERT_WITH_MSG(found, "Cannot find " << i << "th inserted key (" 
+                    << insert_data[i].first << ")")
   }
-  std::cout << "Test Success" << std::endl;  
+  COUT_INFO("Test Success")
 }
 
-void test_synthetic(int num_data) {
+template<typename KT, typename VT>
+void test_synthetic(uint32_t num_data) {
   std::vector<std::pair<KT, VT>> init_data;
   std::vector<std::pair<KT, VT>> ins_data;
-  int num_init_data = num_data / 2;
-  int num_ins_data = num_data - num_init_data;
+  uint32_t num_init_data = num_data / 2;
+  uint32_t num_ins_data = num_data - num_init_data;
   init_data.reserve(num_init_data);
   ins_data.reserve(num_ins_data);
   
-  std::vector<int> idx;
+  std::vector<uint32_t> idx;
   idx.reserve(num_data);
-  for (int i = 0; i < num_data; ++ i) {
+  for (uint32_t i = 0; i < num_data; ++ i) {
     idx.push_back(i);
   }
   aflipara::shuffle(idx, 0, idx.size());
-  for (int i = 0; i < num_init_data; ++ i) {
+  for (uint32_t i = 0; i < num_init_data; ++ i) {
     init_data.push_back({idx[i], idx[i]});
   }
-  for (int i = num_init_data; i < num_data; ++ i) {
+  for (uint32_t i = num_init_data; i < num_data; ++ i) {
     ins_data.push_back({idx[i], idx[i]});
   }
   std::sort(init_data.begin(), init_data.end(), 
@@ -239,40 +229,34 @@ void test_synthetic(int num_data) {
   AFLIPara<KT, VT> afli(num_bg);
   afli.bulk_load(init_data.data(), init_data.size());
   
-  for (int i = 0; i < init_data.size(); ++ i) {
+  for (uint32_t i = 0; i < init_data.size(); ++ i) {
     VT val = 0;
     afli.find(init_data[i].first, val);
-    if (val != init_data[i].second) {
-      std::cout << "Find {" << init_data[i].first << ", " << init_data[i].second 
-                << "}, but got {" << val << "}" << std::endl;
-      exit(-1);
-    }
+    ASSERT_WITH_MSG(val == init_data[i].second, "Find {" << init_data[i].first 
+                    << ", " << init_data[i].second << "}, but got {" << val 
+                    << "}")
   }
   
-  for (int i = 0; i < ins_data.size(); ++ i) {
+  for (uint32_t i = 0; i < ins_data.size(); ++ i) {
     afli.insert(ins_data[i]);
   }
   
-  for (int i = 0; i < ins_data.size(); ++ i) {
+  for (uint32_t i = 0; i < ins_data.size(); ++ i) {
     VT val = 0;
     afli.find(ins_data[i].first, val);
-    if (val != ins_data[i].second) {
-      std::cout << "Find {" << ins_data[i].first << ", " << ins_data[i].second 
-                << "}, but got {" << val << "}" << std::endl;
-      exit(-1);
-    }
+    ASSERT_WITH_MSG(val == ins_data[i].second, "Find {" << ins_data[i].first 
+                    << ", " << ins_data[i].second << "}, but got {" << val 
+                    << "}")
   }
 
-  for (int i = 0; i < init_data.size(); ++ i) {
+  for (uint32_t i = 0; i < init_data.size(); ++ i) {
     VT val = 0;
     afli.find(init_data[i].first, val);
-    if (val != init_data[i].second) {
-      std::cout << "Find {" << init_data[i].first << ", " << init_data[i].second 
-                << "}, but got {" << val << "}" << std::endl;
-      exit(-1);
-    }
+    ASSERT_WITH_MSG(val == init_data[i].second, "Find {" << init_data[i].first 
+                    << ", " << init_data[i].second << "}, but got {" << val 
+                    << "}")
   }
-  std::cout << "Success" << std::endl;
+  COUT_INFO("Success")
 }
 
 int main(int argc, char* argv[]) {
@@ -280,12 +264,16 @@ int main(int argc, char* argv[]) {
   desc.add_options()
     ("help", (tostr("example: ./test_afli_para ") 
      + "--data_path books-200M-20R-zipf.bin " 
-     + "--test_type workload --num_threads 1 --num_bg 2").data())
+     + "--test_type workload --num_workers 1 --num_bg 2").data())
     ("data_path", po::value<std::string>(), 
      "the path of data")
     ("test_type", po::value<std::string>(), 
      "the test type")
-    ("num_threads", po::value<uint32_t>(), 
+    ("key_type", po::value<std::string>(), 
+     "the key type of workload, e.g., double, int32, int64")
+    ("value_type", po::value<std::string>(), 
+     "the value type of workload, e.g., double, int32, int64")
+    ("num_workers", po::value<uint32_t>(), 
      "the number of user threads")
     ("num_bg", po::value<uint32_t>(), 
      "the number of background threads")
@@ -306,19 +294,56 @@ int main(int argc, char* argv[]) {
     return 0;
   }
 
-  check_options(vm, {"data_path", "test_type", "num_threads", "num_bg"});
-  std::string data_path = vm["data_path"].as<std::string>();
+  check_options(vm, {"test_type"});
   std::string test_type = vm["test_type"].as<std::string>();
-  num_threads = vm["num_threads"].as<uint32_t>();
-  num_bg = vm["num_bg"].as<uint32_t>();
-  COUT_INFO("# user threads: " << num_threads << "\t# bg threads: " << num_bg)
-  if (test_type == "raw") {
-    test_raw_dataset(data_path);
-  } else if (test_type == "workload") {
-    test_workload(data_path);
+  if (test_type == "raw" || test_type == "workload") {
+    check_options(vm, {"data_path", "key_type", "value_type", "num_workers", 
+                  "num_bg"});
   } else if (test_type == "synthetic") {
-    int num_data = vm["num_data"].as<uint32_t>();
-    test_synthetic(num_data);
+    check_options(vm, {"num_data", "key_type", "value_type", "num_workers", 
+                  "num_bg"});
+  }
+  std::string key_type = vm["key_type"].as<std::string>();
+  std::string value_type = vm["value_type"].as<std::string>();
+  num_workers = vm["num_workers"].as<uint32_t>();
+  num_bg = vm["num_bg"].as<uint32_t>();
+  COUT_INFO("# user threads: " << num_workers << "\t# bg threads: " << num_bg)
+  if (test_type == "raw") {
+    std::string data_path = vm["data_path"].as<std::string>();
+    if (key_type == "double" && value_type == "uint64") {
+      test_raw_dataset<double, uint64_t>(data_path);
+    } else if (key_type == "int64" && value_type == "uint64") {
+      test_raw_dataset<int64_t, uint64_t>(data_path);
+    } else if (key_type == "uint64" && value_type == "uint64") {
+      test_raw_dataset<uint64_t, uint64_t>(data_path);
+    } else {
+      COUT_ERR("Unsupported key type [" << key_type << "] value type [" 
+               << value_type << "]")
+    }
+  } else if (test_type == "workload") {
+    std::string data_path = vm["data_path"].as<std::string>();
+    if (key_type == "double" && value_type == "uint64") {
+      test_workload<double, uint64_t>(data_path);
+    } else if (key_type == "int64" && value_type == "uint64") {
+      test_workload<int64_t, uint64_t>(data_path);
+    } else if (key_type == "uint64" && value_type == "uint64") {
+      test_workload<uint64_t, uint64_t>(data_path);
+    } else {
+      COUT_ERR("Unsupported key type [" << key_type << "] value type [" 
+               << value_type << "]")
+    }
+  } else if (test_type == "synthetic") {
+    uint32_t num_data = vm["num_data"].as<uint32_t>();
+    if (key_type == "double" && value_type == "uint64") {
+      test_synthetic<double, uint64_t>(num_data);
+    } else if (key_type == "int64" && value_type == "uint64") {
+      test_synthetic<int64_t, uint64_t>(num_data);
+    } else if (key_type == "uint64" && value_type == "uint64") {
+      test_synthetic<uint64_t, uint64_t>(num_data);
+    } else {
+      COUT_ERR("Unsupported key type [" << key_type << "] value type [" 
+               << value_type << "]")
+    }
   } else {
     COUT_ERR("Unsupported test type\t" << test_type)
   }

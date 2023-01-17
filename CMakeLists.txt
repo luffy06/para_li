@@ -23,24 +23,10 @@ else ()
 endif ()
 
 include_directories(
-  ${SRC_DIR}
-  ${LIB_DIR}
+  ${SRC_DIR}/core
+  ${LIB_DIR}/thread-pool
 )
 
-# add_executable(format "${SRC_DIR}/util/format_data.cc")
-# add_executable(gen "${SRC_DIR}/util/data_generator.cc")
-# add_executable(nf_convert "${SRC_DIR}/util/nf_data_converter.cc")
-# add_executable(evaluate_nf "${SRC_DIR}/util/evaluate_nf.cc")
-
-# add_executable(benchmark "${SRC_DIR}/benchmark/benchmark.cc")
-# add_executable(benchmark_xindex "${SRC_DIR}/benchmark/benchmark_xindex.cc")
-# add_executable(benchmark_finedex "${SRC_DIR}/benchmark/benchmark_finedex.cc")
-# add_executable(benchmark_afli "${SRC_DIR}/benchmark/benchmark_afli.cc")
-
-# add_executable(test_nfl "${SRC_DIR}/test/test_nfl.cc")
-# add_executable(test_afli "${SRC_DIR}/test/test_afli.cc")
-# add_executable(test_bnaf "${SRC_DIR}/test/test_numerical_flow.cc")
-# add_executable(test_lm "${SRC_DIR}/test/test_linear_model.cc")
 add_executable(test_afli_para "${SRC_DIR}/test/test_afli_para.cc")
 add_executable(test_lock "${SRC_DIR}/test/test_lock.cc")
 
@@ -64,6 +50,7 @@ find_package(Boost COMPONENTS program_options REQUIRED)
 if (Boost_FOUND)
   include_directories(${Boost_INCLUDE_DIRS})
   target_link_libraries(test_afli_para ${Boost_LIBRARIES})
+  target_link_libraries(test_lock ${Boost_LIBRARIES})
 else ()
   message(WARNING "Boost libs are not found")
 endif ()

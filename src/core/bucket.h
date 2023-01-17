@@ -1,7 +1,7 @@
 #ifndef BUCKET_PARA_H
 #define BUCKET_PARA_H
 
-#include "util/common.h"
+#include "common.h"
 
 namespace aflipara {
 
@@ -17,7 +17,8 @@ public:
 
 public:
   Bucket() = delete;
-  explicit Bucket(const KVT* kvs, uint32_t size, const uint32_t capacity, int a, int b);
+  explicit Bucket(const KVT* kvs, uint32_t size, const uint32_t capacity, 
+                  int a, int b);
   ~Bucket();
 
   uint8_t get_size();
@@ -35,5 +36,6 @@ private:
 };
 
 }
+
 
 #endif

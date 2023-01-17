@@ -1,7 +1,7 @@
 #ifndef BUCKET_PARA_IMPL_H
 #define BUCKET_PARA_IMPL_H
 
-#include "afli_para/bucket.h"
+#include "bucket.h"
 
 namespace aflipara {
 
@@ -44,7 +44,7 @@ bool Bucket<KT, VT>::find(KT key, VT& value) {
   lock();
   bool found = false;
   for (uint32_t i = 0; i < size; ++ i) {
-    if (compare(data[i].first, key)) {
+    if (equal(data[i].first, key)) {
       value = data[i].second;
       found = true;
       break;
@@ -59,7 +59,7 @@ bool Bucket<KT, VT>::update(KVT kv) {
   lock();
   bool found = false;
   for (uint8_t i = 0; i < size; ++ i) {
-    if (compare(data[i].first, kv.first)) {
+    if (equal(data[i].first, kv.first)) {
       data[i] = kv;
       found = true;
       break;
@@ -74,7 +74,7 @@ bool Bucket<KT, VT>::remove(KT key) {
   lock();
   bool found = false;
   for (uint8_t i = 0; i < size; ++ i) {
-    if (compare(data[i].first, key)) {
+    if (equal(data[i].first, key)) {
       found = true;
     }
     if (found && i + 1 < size) {

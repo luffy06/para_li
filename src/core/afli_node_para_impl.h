@@ -1,28 +1,18 @@
 #ifndef AFLI_NODE_PARA_IMPL_H
 #define AFLI_NODE_PARA_IMPL_H
 
-#include "afli_para/afli_node_para.h"
-
-#define BIT_TYPE uint8_t
-#define BIT_SIZE (sizeof(BIT_TYPE) * 8)
-#define BIT_LEN(x) (std::ceil((x) * 1. / BIT_SIZE))
-#define BIT_IDX(x) ((x) / BIT_SIZE)
-#define BIT_POS(x) ((x) % BIT_SIZE)
-#define SET_BIT_ONE(x, n) ((x) |= (1 << (n)))
-#define SET_BIT_ZERO(x, n) ((x) &= (~(1 << (n))))
-#define REV_BIT(x, n) ((x) ^= (1 << (n)))
-#define GET_BIT(x, n) (((x) >> (n)) & 1)
+#include "afli_node_para.h"
 
 namespace aflipara {
 
 template<typename KT, typename VT>
 TNodePara<KT, VT>::TNodePara(uint32_t id) {
-  id = id;
-  model = nullptr;
-  capacity = 0;
-  bitmap0 = bitmap1 = nullptr;
-  entries = nullptr;
-  bitmap_lock = nullptr;
+  this->id = id;
+  this->model = nullptr;
+  this->capacity = 0;
+  this->bitmap0 = this->bitmap1 = nullptr;
+  this->entries = nullptr;
+  this->bitmap_lock = nullptr;
 }
 
 template<typename KT, typename VT>
@@ -43,7 +33,7 @@ bool TNodePara<KT, VT>::find(KT key, VT& value, uint32_t depth) {
   if (type == kData) {
     KVT kv;
     entries[idx].read_kv(kv);
-    if (compare(kv.first, key)) {
+    if (equal(kv.first, key)) {
       value = kv.second;
       return true;
     } else {
@@ -52,13 +42,13 @@ bool TNodePara<KT, VT>::find(KT key, VT& value, uint32_t depth) {
   } else if (type == kBucket) {
     Bucket<KT, VT>* bucket = nullptr;
     entries[idx].read_bucket(bucket);
-    assert_p(bucket != nullptr, "Null bucket");
+    ASSERT_WITH_MSG(bucket != nullptr, "Null bucket");
     bool res = bucket->find(key, value);
     return res;
   } else if (type == kNode) {
     TNodePara<KT, VT>* child = nullptr;
     entries[idx].read_child(child);
-    assert_p(child != nullptr, "Null child node");
+    ASSERT_WITH_MSG(child != nullptr, "Null child node");
     return child->find(key, value, depth + 1);
   } else {
     return false;
@@ -74,7 +64,7 @@ bool TNodePara<KT, VT>::update(KVT kv) {
   if (type == kData) {
     KVT stored_kv;
     entries[idx].read_kv(kv);
-    if (compare(stored_kv.first, kv.first)) {
+    if (equal(stored_kv.first, kv.first)) {
       entries[idx].update_kv(kv);
       return true;
     } else {
@@ -102,7 +92,7 @@ bool TNodePara<KT, VT>::remove(KT key) {
   if (type == kData) {
     KVT kv;
     entries[idx].read_kv(kv);
-    if (compare(kv.first, key)) {
+    if (equal(kv.first, key)) {
       set_entry_type(idx, kNone);
       return true;
     } else {

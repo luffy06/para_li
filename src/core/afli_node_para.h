@@ -1,10 +1,10 @@
 #ifndef AFLI_NODE_PARA_H
 #define AFLI_NODE_PARA_H
 
-#include "afli_para/bucket_impl.h"
-#include "models/conflicts.h"
-#include "models/linear_model.h"
-#include "util/common.h"
+#include "bucket_impl.h"
+#include "conflicts.h"
+#include "linear_model.h"
+#include "common.h"
 
 namespace aflipara {
 
@@ -23,7 +23,7 @@ struct HyperParameter {
   // Constant parameters
   const uint32_t kMaxBucketSize = 6;
   const uint32_t kMinBucketSize = 1;
-  const double kSizeAmplification = 2;
+  const double kSizeAmplification = 1;
   const double kTailPercent = 0.99;
 };
 
@@ -140,12 +140,11 @@ struct RebuildInfo {
              : node_ptr(t), depth(d), idx(i), hyper_para(h) { }
 };
 
-
 template<typename KT, typename VT>
 class TNodePara {
 typedef std::pair<KT, VT> KVT;
-private:
-  uint32_t                    id;
+public:
+  uint32_t                    id;        // DELETE
 
   LinearModel<KT>*            model;     // 'nullptr' means this is a btree node
   uint32_t                    capacity;  // The pre-allocated size of array

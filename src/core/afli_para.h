@@ -1,8 +1,8 @@
 #ifndef AFLI_PARA_H
 #define AFLI_PARA_H
 
-#include "afli_para/afli_node_para_impl.h"
-#include "thread-pool/BS_thread_pool.hpp"
+#include "afli_node_para_impl.h"
+#include "BS_thread_pool.hpp"
 
 namespace aflipara {
 
@@ -40,8 +40,8 @@ private:
 
   void adapt_bucket_size(const KVT* kvs, uint32_t size, 
                          HyperParameter& hyper_para);
-  uint32_t collect_tree_statistics(const TNodePara<KT, VT>* node, 
-                                   uint32_t depth, TreeStat& ts);
+  // uint32_t collect_tree_statistics(const TNodePara<KT, VT>* node, 
+  //                                  uint32_t depth, TreeStat& ts);
 };
 
 }

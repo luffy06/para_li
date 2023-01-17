@@ -1,8 +1,8 @@
 #ifndef CONFLICTS_PARA_H
 #define CONFLICTS_PARA_H
 
-#include "models/linear_model.h"
-#include "util/common.h"
+#include "linear_model.h"
+#include "common.h"
 
 namespace aflipara {
 
@@ -13,8 +13,8 @@ struct ConflictsInfo {
   uint32_t max_size;
   uint32_t size;
 
-  ConflictsInfo(uint32_t size, uint32_t max_size) 
-    : max_size(max_size), num_conflicts(0) {
+  ConflictsInfo(uint32_t size, uint32_t max_size) : max_size(max_size), 
+                num_conflicts(0) {
     size = size;
     conflicts = new uint32_t[size];
     positions = new uint32_t[size];
@@ -34,10 +34,9 @@ struct ConflictsInfo {
 
 template<typename KT, typename VT>
 ConflictsInfo* build_linear_model(const std::pair<KT, VT>* kvs, uint32_t size,
-                                  LinearModel<KT>*& model, 
-                                  double size_amp) {
+                                  LinearModel<KT>*& model, double size_amp=1) {
   if (model != nullptr) {
-    model->slope_ = model->intercept_ = 0;
+    model->slope = model->intercept = 0;
   } else {
     model = new LinearModel<KT>();
   }
@@ -45,33 +44,27 @@ ConflictsInfo* build_linear_model(const std::pair<KT, VT>* kvs, uint32_t size,
   // The heuristics below is a simple method that scales the positions
   KT min_key = kvs[0].first;
   KT max_key = kvs[size - 1].first;
-  if (compare(min_key, max_key)) {
-    COUT_ERR("Range [" << min_key << ", " << max_key << "], Size: " << size 
-             << ", all keys used to build the linear model are the same.")
-  }
+  ASSERT_WITH_MSG(!equal(min_key, max_key), "Range [" << min_key << ", " 
+                  << max_key << "], Size: " << size 
+                  << ", all keys used to +build the linear model are the same.")
   KT key_space = max_key - min_key;
-
   uint32_t capacity = static_cast<uint32_t>(size * size_amp);
   LinearModelBuilder<KT> builder;
-  uint32_t j = 0;
   for (uint32_t i = 0; i < size; ++ i) {
     KT key = (kvs[i].first - min_key) * size / key_space;
     double y = i;
     builder.add(key, y);
   }
   builder.build(model);
-  if (compare(model->slope_, 0.)) {
+  if (equal(model->slope, 0.)) {
     // Fail to build a linear model
-    // delete model;
-    // model = nullptr;
-    // return nullptr;
-    std::cout << "Fail to build a linear model, since the key space is too " 
-              << "small" << std::endl;
-    exit(-1);
+    COUT_ERR("Fail to build a linear model, since the key space [" << key_space 
+             << "] is too small")
   } else {
-    model->slope_ = model->slope_ * size / key_space;
-    model->intercept_ = -model->slope_ * (min_key) + 0.5;
-    assert_p(model->predict(min_key) == 0, "The first prediction must be zero");
+    model->slope = model->slope * size / key_space;
+    model->intercept = -model->slope * min_key + 0.5;
+    ASSERT_WITH_MSG(model->predict(min_key) == 0, 
+                    "The first prediction must be zero")
     int64_t predicted_size = model->predict(max_key) + 1;
     if (predicted_size > 1) {
       capacity = std::min(predicted_size, static_cast<int64_t>(capacity));
@@ -83,8 +76,8 @@ ConflictsInfo* build_linear_model(const std::pair<KT, VT>* kvs, uint32_t size,
     if (last_pos == first_pos) {
       // Model fails to predict since all predicted positions are rounded to 
       // the same one
-      model->slope_ = size / (max_key - min_key);
-      model->intercept_ = 0;
+      model->slope = size / key_space;
+      model->intercept = 0;
     }
     ConflictsInfo* ci = new ConflictsInfo(size, capacity);
     uint32_t p_last = 0;
@@ -109,7 +102,7 @@ ConflictsInfo* build_linear_model(const std::pair<KT, VT>* kvs, uint32_t size,
 
 template<typename KT, typename VT>
 uint32_t compute_tail_conflicts(const std::pair<KT, VT>* kvs, uint32_t size, 
-                              double size_amp, float kTailPercent=0.99) {
+                                double size_amp, float kTailPercent=0.99) {
   // The input keys should be ordered
   LinearModel<KT>* model = new LinearModel<KT>();
   ConflictsInfo* ci = build_linear_model<KT, VT>(kvs, size, model, size_amp);
