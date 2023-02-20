@@ -11,7 +11,6 @@ endif(NOT CMAKE_CXX_STANDARD)
 list(APPEND CMAKE_PREFIX_PATH "${PROJECT_SOURCE_DIR}/lib/libmkl")
 
 set(SRC_DIR "${PROJECT_SOURCE_DIR}/src")
-set(LIB_DIR "${PROJECT_SOURCE_DIR}/lib")
 
 # Configuration for ALEX
 if (MSVC)
@@ -24,7 +23,7 @@ endif ()
 
 include_directories(
   ${SRC_DIR}/core
-  ${LIB_DIR}/thread-pool
+  ${SRC_DIR}/lib
 )
 
 add_executable(test_afli_para "${SRC_DIR}/test/test_afli_para.cc")

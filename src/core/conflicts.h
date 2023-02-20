@@ -51,17 +51,18 @@ ConflictsInfo* build_linear_model(const std::pair<KT, VT>* kvs, uint32_t size,
   uint32_t capacity = static_cast<uint32_t>(size * size_amp);
   LinearModelBuilder<KT> builder;
   for (uint32_t i = 0; i < size; ++ i) {
-    double key = kvs[i].first;
+    double key = (kvs[i].first - min_key) / (max_key - min_key);
     double y = i;
     builder.add(key, y);
   }
   builder.build(model);
   if (equal(model->slope, 0.)) {
     // Fail to build a linear model
-    COUT_ERR("Fail to build a linear model, since the key space [" << key_space 
-             << "] is too small")
+    COUT_ERR("Fail to build a linear model, since the slope is zero and the " 
+             << "keys ranging from [" << min_key << "] to [" << max_key 
+             << "] are too large.")
   } else {
-    // model->slope = model->slope * size / key_space;
+    model->slope = model->slope / key_space;
     model->intercept = -model->slope * min_key + 0.5;
     ASSERT_WITH_MSG(model->predict(min_key) == 0, 
                     "The first prediction must be zero")

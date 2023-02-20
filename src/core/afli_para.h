@@ -2,7 +2,7 @@
 #define AFLI_PARA_H
 
 #include "afli_node_para_impl.h"
-#include "BS_thread_pool.hpp"
+#include "thread-pool/BS_thread_pool.hpp"
 
 namespace aflipara {
 
