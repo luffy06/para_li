@@ -9,7 +9,7 @@ template<typename KT, typename VT>
 AFLIPara<KT, VT>::AFLIPara(uint32_t num_bg) {
   root = nullptr;
   if (num_bg > 0) {
-    pool = new BS::thread_pool(num_bg);
+    pool = new boost::asio::thread_pool(num_bg);
   } else {
     pool = nullptr;
   }
@@ -55,10 +55,7 @@ void AFLIPara<KT, VT>::insert(KVT kv) {
   RebuildInfo<KT, VT>* ri = root->insert(kv, 1, hyper_para);
   if (ri != nullptr) {
     if (pool != nullptr) {
-      auto future = pool->submit(&AFLIPara<KT, VT>::rebuild, this, ri);
-      if (pool->get_tasks_queued() > 50) {
-        future.wait();
-      }
+      boost::asio::post(*pool, boost::bind(AFLIPara<KT, VT>::rebuild, ri));
     } else { // No background threads, directly rebuild
       AFLIPara::rebuild(ri);
     }

@@ -2,7 +2,6 @@
 #define AFLI_PARA_H
 
 #include "afli_node_para_impl.h"
-#include "BS_thread_pool.hpp"
 
 namespace aflipara {
 
@@ -17,7 +16,7 @@ class AFLIPara {
 typedef std::pair<KT, VT> KVT;
 private:
   TNodePara<KT, VT>* volatile root;
-  BS::thread_pool* pool;
+  boost::asio::thread_pool* pool;
 public:
   HyperParameter hyper_para;
 public:
@@ -36,7 +35,7 @@ public:
 
   void print_statistics();
 private:
-  void rebuild(RebuildInfo<KT, VT>* ri);
+  static void rebuild(RebuildInfo<KT, VT>* ri);
 
   void adapt_bucket_size(const KVT* kvs, uint32_t size, 
                          HyperParameter& hyper_para);

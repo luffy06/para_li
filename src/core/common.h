@@ -6,6 +6,8 @@
 #include <atomic>
 #include <boost/optional.hpp>
 #include <boost/program_options.hpp>
+#include <boost/asio.hpp>
+#include <boost/bind.hpp>
 #include <cassert>
 #include <chrono>
 #include <cmath>
