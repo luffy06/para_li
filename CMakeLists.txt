@@ -23,7 +23,6 @@ endif ()
 
 include_directories(
   ${SRC_DIR}/core
-  ${SRC_DIR}/lib
 )
 
 add_executable(test_afli_para "${SRC_DIR}/test/test_afli_para.cc")
