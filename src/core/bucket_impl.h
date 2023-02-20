@@ -41,7 +41,6 @@ std::pair<KT, VT>* Bucket<KT, VT>::copy() {
 
 template<typename KT, typename VT>
 bool Bucket<KT, VT>::find(KT key, VT& value) {
-  lock();
   bool found = false;
   for (uint32_t i = 0; i < size; ++ i) {
     if (equal(data[i].first, key)) {
@@ -50,13 +49,11 @@ bool Bucket<KT, VT>::find(KT key, VT& value) {
       break;
     }
   }
-  unlock();
   return found;
 }
 
 template<typename KT, typename VT>
 bool Bucket<KT, VT>::update(KVT kv) {
-  lock();
   bool found = false;
   for (uint8_t i = 0; i < size; ++ i) {
     if (equal(data[i].first, kv.first)) {
@@ -65,13 +62,11 @@ bool Bucket<KT, VT>::update(KVT kv) {
       break;
     }
   }
-  unlock();
   return found;
 }
 
 template<typename KT, typename VT>
 bool Bucket<KT, VT>::remove(KT key) {
-  lock();
   bool found = false;
   for (uint8_t i = 0; i < size; ++ i) {
     if (equal(data[i].first, key)) {
@@ -82,30 +77,15 @@ bool Bucket<KT, VT>::remove(KT key) {
     }
   }
   size -= found;
-  unlock();
   return found;
 }
 
 template<typename KT, typename VT>
 bool Bucket<KT, VT>::insert(KVT kv, const uint32_t capacity) {
-  lock();
   data[size] = kv;
   size ++;
   bool need_rebuild = !(size < capacity);
-  unlock();
   return need_rebuild;
-}
-
-template<typename KT, typename VT>
-void Bucket<KT, VT>::lock() {
-  uint8_t unlocked = 0, locked = 1;
-  while (unlikely(cmpxchgb((uint8_t *)&this->status, unlocked, locked) !=
-                  unlocked)) ;
-}
-
-template<typename KT, typename VT>
-void Bucket<KT, VT>::unlock() {
-  status = 0;
 }
 
 }

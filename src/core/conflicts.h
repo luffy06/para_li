@@ -47,11 +47,11 @@ ConflictsInfo* build_linear_model(const std::pair<KT, VT>* kvs, uint32_t size,
   ASSERT_WITH_MSG(!equal(min_key, max_key), "Range [" << min_key << ", " 
                   << max_key << "], Size: " << size 
                   << ", all keys used to +build the linear model are the same.")
-  KT key_space = max_key - min_key;
+  double key_space = max_key - min_key;
   uint32_t capacity = static_cast<uint32_t>(size * size_amp);
   LinearModelBuilder<KT> builder;
   for (uint32_t i = 0; i < size; ++ i) {
-    KT key = (kvs[i].first - min_key) * size / key_space;
+    double key = kvs[i].first;
     double y = i;
     builder.add(key, y);
   }
@@ -61,7 +61,7 @@ ConflictsInfo* build_linear_model(const std::pair<KT, VT>* kvs, uint32_t size,
     COUT_ERR("Fail to build a linear model, since the key space [" << key_space 
              << "] is too small")
   } else {
-    model->slope = model->slope * size / key_space;
+    // model->slope = model->slope * size / key_space;
     model->intercept = -model->slope * min_key + 0.5;
     ASSERT_WITH_MSG(model->predict(min_key) == 0, 
                     "The first prediction must be zero")
@@ -76,11 +76,14 @@ ConflictsInfo* build_linear_model(const std::pair<KT, VT>* kvs, uint32_t size,
     if (last_pos == first_pos) {
       // Model fails to predict since all predicted positions are rounded to 
       // the same one
+      // COUT_INFO("The last predicted position [" << last_pos 
+      //           << "] is the same as the first predicted position [" 
+      //           << first_pos << "]");
       model->slope = size / key_space;
-      model->intercept = 0;
+      model->intercept = -model->slope * min_key + 0.5;
     }
     ConflictsInfo* ci = new ConflictsInfo(size, capacity);
-    uint32_t p_last = 0;
+    uint32_t p_last = first_pos;
     uint32_t conflict = 1;
     for (uint32_t i = 1; i < size; ++ i) {
       uint32_t p = std::min(std::max(model->predict(kvs[i].first), 0L), 

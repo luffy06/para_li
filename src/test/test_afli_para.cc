@@ -53,8 +53,10 @@ void* run_requests(void* param) {
     Request<KT>& req = reqs[i];
     if (req.op == kQuery) {
       VT value;
+      // COUT_INFO_W_LOCK("Thread " << thread_id << " query " << req.key);
       bool found = afli->find(req.key, value);
     } else if (req.op == kInsert) {
+      // COUT_INFO_W_LOCK("Thread " << thread_id << " insert " << req.key);
       afli->insert({req.key, dummy_value});
     }
     thread_param.num_done_reqs ++;
@@ -74,7 +76,6 @@ void test_workload(std::string workload_path) {
   for (uint32_t i = 0; i < init_keys.size(); ++ i) {
     init_kvs.push_back({init_keys[i], i});
   }
-  
   COUT_INFO("# loading data [" << init_kvs.size() << "]")
   COUT_INFO("# requests [" << reqs.size() << "]")
 
@@ -165,7 +166,7 @@ void test_raw_dataset(std::string data_path) {
       return a.first < b.first;
   });
   // Test bulk loading
-  COUT_INFO("Test Bulk Loading, Number of Keys\t" << init_data.size())
+  COUT_INFO("Test bulk loading, number of keys [" << init_data.size() << "]")
   afli.bulk_load(init_data.data(), init_data.size());
   afli.print_statistics();
 

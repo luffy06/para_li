@@ -101,8 +101,7 @@ void AFLIPara<KT, VT>::rebuild(RebuildInfo<KT, VT>* ri) {
   TNodePara<KT, VT>* node = ri->node_ptr;
   uint32_t depth = ri->depth;
   uint32_t idx = ri->idx;
-  Bucket<KT, VT>* bucket;
-  node->entries[idx].read_bucket_without_lock(bucket);
+  Bucket<KT, VT>* bucket = node->entries[idx].bucket;
   assert(bucket->idx == idx);
   assert(bucket->node_id == node->id);
   uint32_t bucket_size = bucket->get_size();
@@ -115,8 +114,8 @@ void AFLIPara<KT, VT>::rebuild(RebuildInfo<KT, VT>* ri) {
   TNodePara<KT, VT>* child = new TNodePara<KT, VT>(ri->hyper_para.num_nodes++);
   child->build(kvs, bucket_size, ri->depth + 1, ri->hyper_para);
   node->set_entry_type(idx, kNode);
-  node->entries[idx].update_child_without_lock(child);
-  node->entries[idx].unlock();
+  node->entries[idx].child = child;
+  node->unlock_entry(idx);
   delete[] kvs;
   delete ri;
 }

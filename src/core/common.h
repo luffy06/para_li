@@ -104,7 +104,7 @@ void unlock_stdout() {
   out_locked = 0;
 }
 
-#define COUT_W_LOCK(this) \
+#define COUT_INFO_W_LOCK(this) \
   lock_stdout(); \
   std::cout << std::fixed << this << std::endl; \
   unlock_stdout();

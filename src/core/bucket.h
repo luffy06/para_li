@@ -29,10 +29,6 @@ public:
   bool remove(KT key);
   bool insert(KVT kv, const uint32_t capacity);
 
-private:
-  void lock();
-  void unlock();
-
 };
 
 }
