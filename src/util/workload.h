@@ -1,8 +1,8 @@
 #ifndef WORKLOAD_H
 #define WORKLOAD_H
 
-#include "zipf.h"
-#include "common.h"
+#include "util/zipf.h"
+#include "core/common.h"
 
 namespace aflipara {
 

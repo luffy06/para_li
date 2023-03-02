@@ -1,10 +1,10 @@
 #ifndef AFLI_NODE_PARA_H
 #define AFLI_NODE_PARA_H
 
-#include "bucket_impl.h"
-#include "conflicts.h"
-#include "linear_model.h"
-#include "common.h"
+#include "core/bucket_impl.h"
+#include "core/conflicts.h"
+#include "core/linear_model.h"
+#include "core/common.h"
 
 namespace aflipara {
 

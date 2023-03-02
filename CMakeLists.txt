@@ -22,16 +22,19 @@ else ()
 endif ()
 
 include_directories(
-  ${SRC_DIR}/core
+  ${SRC_DIR}
 )
 
+add_executable(sample "${SRC_DIR}/util/sample_keys.cc")
 add_executable(test_afli_para "${SRC_DIR}/test/test_afli_para.cc")
+# add_executable(test_nfl_para "${SRC_DIR}/test/test_nfl_para.cc")
 add_executable(test_lock "${SRC_DIR}/test/test_lock.cc")
 
 find_package(MKL)
 if (MKL_FOUND)
   include_directories(${MKL_INCLUDE_DIR})
   target_link_libraries(test_afli_para ${MKL_LIBRARIES})
+  # target_link_libraries(test_nfl_para ${MKL_LIBRARIES})
 else ()
   message(WARNING "MKL libs not found")
 endif ()
@@ -47,7 +50,9 @@ endif ()
 find_package(Boost COMPONENTS program_options REQUIRED)
 if (Boost_FOUND)
   include_directories(${Boost_INCLUDE_DIRS})
+  target_link_libraries(sample ${Boost_LIBRARIES})
   target_link_libraries(test_afli_para ${Boost_LIBRARIES})
+  # target_link_libraries(test_nfl_para ${Boost_LIBRARIES})
   target_link_libraries(test_lock ${Boost_LIBRARIES})
 else ()
   message(WARNING "Boost libs are not found")

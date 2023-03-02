@@ -1,7 +1,7 @@
 #ifndef BUCKET_PARA_H
 #define BUCKET_PARA_H
 
-#include "common.h"
+#include "core/common.h"
 
 namespace aflipara {
 

@@ -1,7 +1,7 @@
 #ifndef AFLI_PARA_H
 #define AFLI_PARA_H
 
-#include "afli_node_para_impl.h"
+#include "core/afli_node_para_impl.h"
 
 namespace aflipara {
 

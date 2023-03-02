@@ -1,7 +1,7 @@
 #ifndef ZIPF_H
 #define ZIPF_H
 
-#include "common.h"
+#include "core/common.h"
 
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.

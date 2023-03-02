@@ -1,4 +1,4 @@
-#include "core/afli_para_impl.h"
+#include "core/nfl_para_impl.h"
 #include "core/common.h"
 #include "util/workload.h"
 
@@ -16,7 +16,7 @@ uint32_t num_bg = 1;
 template<typename KT, typename VT>
 struct ThreadParam {
   uint32_t id;
-  AFLIPara<KT, VT>* index;
+  NFLPara<KT, VT>* index;
   std::vector<Request<KT>>* reqs;
   uint32_t num_done_reqs;
   TT start_time;
@@ -27,7 +27,7 @@ template<typename KT, typename VT>
 void* run_requests(void* param) {
   ThreadParam<KT, VT>& thread_param = *((ThreadParam<KT, VT>*)param);
   uint32_t thread_id = thread_param.id;
-  AFLIPara<KT, VT>* afli = thread_param.index;
+  NFLPara<KT, VT>* nfl = thread_param.index;
   std::vector<Request<KT>>& reqs = *(thread_param.reqs);
 
   uint32_t reqs_per_thread = std::ceil(reqs.size() / num_workers);
@@ -44,10 +44,10 @@ void* run_requests(void* param) {
     if (req.op == kQuery) {
       VT value;
       // COUT_INFO_W_LOCK("Thread " << thread_id << " query " << req.key);
-      bool found = afli->find(req.key, value);
+      bool found = nfl->find(req.key, value);
     } else if (req.op == kInsert) {
       // COUT_INFO_W_LOCK("Thread " << thread_id << " insert " << req.key);
-      afli->insert({req.key, dummy_value});
+      nfl->insert({req.key, dummy_value});
     }
     thread_param.num_done_reqs ++;
   }
@@ -70,17 +70,17 @@ void test_workload(std::string workload_path) {
   COUT_INFO("# requests [" << reqs.size() << "]")
 
   auto bulk_load_start = TIME_LOG;
-  AFLIPara<KT, VT> afli(num_bg);
+  NFLPara<KT, VT> nfl(num_bg);
   auto bulk_load_mid = TIME_LOG;
-  afli.bulk_load(init_kvs.data(), init_kvs.size());
-  // afli.print_statistics();
+  nfl.bulk_load(init_kvs.data(), init_kvs.size());
+  // nfl.print_statistics();
   auto bulk_load_end = TIME_LOG;
   double construct_index_time = TIME_IN_SECOND(bulk_load_start, bulk_load_mid);
   double bulk_load_index_time = TIME_IN_SECOND(bulk_load_mid, bulk_load_end);
 
   COUT_INFO("Bulk loading\t" << construct_index_time << " sec\t"
             << bulk_load_index_time << " sec")
-  COUT_INFO("# Nodes\t" << afli.hyper_para.num_nodes)
+  COUT_INFO("# Nodes\t" << nfl.hyper_para.num_nodes)
 
   pthread_t threads[num_workers];
   ThreadParam<KT, VT> thread_params[num_workers];
@@ -88,7 +88,7 @@ void test_workload(std::string workload_path) {
   running = false;
   for (uint32_t i = 0; i < num_workers; ++ i) {
     thread_params[i].id = i;
-    thread_params[i].index = &afli;
+    thread_params[i].index = &nfl;
     thread_params[i].reqs = &reqs;
     thread_params[i].num_done_reqs = 0;
     int ret = pthread_create(&threads[i], nullptr, run_requests<KT, VT>, 
@@ -134,7 +134,7 @@ void test_raw_dataset(std::string data_path) {
   std::vector<KT> keys;
   load_keyset(data_path, keys);
   uint32_t num_keys = keys.size();
-  AFLIPara<KT, VT> afli(num_bg);
+  NFLPara<KT, VT> nfl(num_bg);
   std::vector<uint32_t> idx;
   for (uint32_t i = 0; i < num_keys; ++ i) {
     idx.push_back(i);
@@ -157,34 +157,34 @@ void test_raw_dataset(std::string data_path) {
   });
   // Test bulk loading
   COUT_INFO("Test bulk loading, number of keys [" << init_data.size() << "]")
-  afli.bulk_load(init_data.data(), init_data.size());
-  afli.print_statistics();
+  nfl.bulk_load(init_data.data(), init_data.size());
+  nfl.print_statistics();
 
   // Test query
   COUT_INFO("Test Querying")
   for (uint32_t i = 0; i < init_data.size(); ++ i) {
     VT value;
-    bool found = afli.find(init_data[i].first, value);
+    bool found = nfl.find(init_data[i].first, value);
     ASSERT_WITH_MSG(found, "Cannot find " << i << "th key (" 
                     << init_data[i].first << ")")
   }
   // Test insert
   COUT_INFO("Test Insertion")
   for (uint32_t i = 0; i < insert_data.size(); ++ i) {
-    afli.insert(insert_data[i]);
+    nfl.insert(insert_data[i]);
   }
-  afli.print_statistics();
+  nfl.print_statistics();
   // Test query
   COUT_INFO("Test Querying After Insertion")
   for (uint32_t i = 0; i < init_data.size(); ++ i) {
     VT value;
-    bool found = afli.find(init_data[i].first, value);
+    bool found = nfl.find(init_data[i].first, value);
     ASSERT_WITH_MSG(found, "Cannot find " << i << "th loading key (" 
                     << init_data[i].first << ")")
   }
   for (uint32_t i = 0; i < insert_data.size(); ++ i) {
     VT value;
-    bool found = afli.find(insert_data[i].first, value);
+    bool found = nfl.find(insert_data[i].first, value);
     ASSERT_WITH_MSG(found, "Cannot find " << i << "th inserted key (" 
                     << insert_data[i].first << ")")
   }
@@ -217,24 +217,24 @@ void test_synthetic(uint32_t num_data) {
       return a.first < b.first;
   });
 
-  AFLIPara<KT, VT> afli(num_bg);
-  afli.bulk_load(init_data.data(), init_data.size());
+  NFLPara<KT, VT> nfl(num_bg);
+  nfl.bulk_load(init_data.data(), init_data.size());
   
   for (uint32_t i = 0; i < init_data.size(); ++ i) {
     VT val = 0;
-    afli.find(init_data[i].first, val);
+    nfl.find(init_data[i].first, val);
     ASSERT_WITH_MSG(val == init_data[i].second, "Find {" << init_data[i].first 
                     << ", " << init_data[i].second << "}, but got {" << val 
                     << "}")
   }
   
   for (uint32_t i = 0; i < ins_data.size(); ++ i) {
-    afli.insert(ins_data[i]);
+    nfl.insert(ins_data[i]);
   }
   
   for (uint32_t i = 0; i < ins_data.size(); ++ i) {
     VT val = 0;
-    afli.find(ins_data[i].first, val);
+    nfl.find(ins_data[i].first, val);
     ASSERT_WITH_MSG(val == ins_data[i].second, "Find {" << ins_data[i].first 
                     << ", " << ins_data[i].second << "}, but got {" << val 
                     << "}")
@@ -242,7 +242,7 @@ void test_synthetic(uint32_t num_data) {
 
   for (uint32_t i = 0; i < init_data.size(); ++ i) {
     VT val = 0;
-    afli.find(init_data[i].first, val);
+    nfl.find(init_data[i].first, val);
     ASSERT_WITH_MSG(val == init_data[i].second, "Find {" << init_data[i].first 
                     << ", " << init_data[i].second << "}, but got {" << val 
                     << "}")
@@ -258,8 +258,6 @@ int main(int argc, char* argv[]) {
      + "--test_type workload --num_workers 1 --num_bg 2").data())
     ("data_path", po::value<std::string>(), 
      "the path of data")
-    ("weight_path", po::value<std::string>(), 
-     "the path of the weights of NF models")
     ("test_type", po::value<std::string>(), 
      "the test type")
     ("key_type", po::value<std::string>(), 

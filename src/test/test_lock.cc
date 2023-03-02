@@ -1,16 +1,7 @@
-#include "common.h"
+#include "core/common.h"
 
 namespace po = boost::program_options;
 using namespace aflipara;
-
-void check_options(const po::variables_map& vm, 
-                   const std::vector<std::string>& options) {
-  for (auto op : options) {
-    if (!vm.count(op)) {
-      COUT_ERR("--" << op << " option required")
-    }
-  }
-}
 
 uint32_t dummy_operation() {
   uint32_t sum = 0;

@@ -1,8 +1,8 @@
 #ifndef CONFLICTS_PARA_H
 #define CONFLICTS_PARA_H
 
-#include "linear_model.h"
-#include "common.h"
+#include "core/linear_model.h"
+#include "core/common.h"
 
 namespace aflipara {
 

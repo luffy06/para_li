@@ -1,7 +1,7 @@
 #ifndef BUCKET_PARA_IMPL_H
 #define BUCKET_PARA_IMPL_H
 
-#include "bucket.h"
+#include "core/bucket.h"
 
 namespace aflipara {
 

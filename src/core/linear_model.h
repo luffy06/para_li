@@ -1,7 +1,7 @@
 #ifndef LINEAR_MODEL_PARA_H
 #define LINEAR_MODEL_PARA_H
 
-#include "common.h"
+#include "core/common.h"
 
 namespace aflipara {
 

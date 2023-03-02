@@ -178,6 +178,21 @@ bool start_with(std::string src, std::string target) {
   return false;
 }
 
+std::vector<std::string> split(std::string s, char sep) {
+  std::vector<std::string> res;
+  std::string tmp = "";
+  for (uint32_t i = 0; i < s.size(); ++ i) {
+    if (s[i] == sep) {
+      res.push_back(tmp);
+      tmp = "";
+    } else {
+      tmp += s[i];
+    }
+  }
+  res.push_back(tmp);
+  return res;
+}
+
 template<typename T>
 void shuffle(std::vector<T>& kvs, int l, int r) {
   std::mt19937_64 gen(kSeed);
@@ -185,6 +200,15 @@ void shuffle(std::vector<T>& kvs, int l, int r) {
     long long rv = gen();
     int j = std::abs(rv) % (r - i) + i;
     std::swap(kvs[j], kvs[i]);
+  }
+}
+
+void check_options(const boost::program_options::variables_map& vm, 
+                   const std::vector<std::string>& options) {
+  for (auto op : options) {
+    if (!vm.count(op)) {
+      std::cout << "--" << op << " option required" << std::endl;
+    }
   }
 }
 
