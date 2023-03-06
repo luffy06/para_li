@@ -1,10 +1,10 @@
 #ifndef NFL_PARA_H
 #define NFL_PARA_H
 
-#include "core/afli_para.h"
+#include "core/afli_para_impl.h"
 #include "core/numerical_flow.h"
-#include "core/common.h"
 #include "core/conflicts.h"
+#include "core/common.h"
 
 namespace aflipara {
 
@@ -12,37 +12,51 @@ template<typename KT, typename VT>
 class NFLPara {
 typedef std::pair<KT, VT> KVT;
 typedef std::pair<KT, KVT> KKVT;
-private:
+public:
+  uint32_t num_bg;
+  // A global buffer 
+  uint32_t max_buffer_size;
+  uint32_t buffer_size;
+  KVT* buffer;
+  KVT* imm_buffer;
+  // Thread pool
+  volatile uint8_t buffer_lock;
+  volatile uint8_t imm_buffer_lock;
+  boost::asio::thread_pool* pool;
+
+  // The learned index
   AFLIPara<KT, VT>* index;
-  uint32_t batch_size;
-  KVT* batch_kvs;
 
   bool enable_flow;
   NumericalFlow<KT, VT>* flow;
   AFLIPara<KT, KVT>* tran_index;
-  KKVT* tran_kvs;
-  uint32_t num_bg;
 
   const float kConflictsDecay = 0.1;
   const uint32_t kMaxBatchSize = 4196;
   const float kSizeAmplification = 1.5;
   const float kTailPercent = 0.99;
 public:
-  NFLPara(std::string weights_path, uint32_t bs, uint32_t nb=1);
+  NFLPara(std::string weight_path, uint32_t mbs, uint32_t nb=1);
   ~NFLPara();
 
-  inline void set_batch_size(uint32_t batch_size);
-  uint32_t auto_switch(const KVT* kvs, uint32_t size, 
-                       uint32_t aggregate_size=0);
-  void bulk_load(const KVT* kvs, uint32_t size, uint32_t tail_conflicts, 
-                 uint32_t aggregate_size=0);
-  void transform(const KVT* kvs, uint32_t size);
-  bool find(uint32_t idx_in_batch, VT& value);
-  bool update(uint32_t idx_in_batch);
-  bool remove(uint32_t idx_in_batch);
-  void insert(uint32_t idx_in_batch);
+  bool buffer_locked();
+  void lock_buffer();
+  void unlock_buffer();
+
+  bool imm_buffer_locked();
+  void lock_imm_buffer();
+  void unlock_imm_buffer();
+
+  inline void set_max_buffer_size(uint32_t max_buffer_size);
+  void bulk_load(const KVT* kvs, uint32_t size, bool enable_flow=true);
+  bool find(KT key, VT& value);
+  bool remove(KT key);
+  bool update(KVT kv);
+  void insert(KVT kv);
   uint64_t model_size();
   uint64_t index_size();
+
+  static void bg_insert(void* args);
 };
 
 }

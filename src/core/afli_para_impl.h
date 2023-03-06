@@ -6,10 +6,16 @@
 namespace aflipara {
 
 template<typename KT, typename VT>
-AFLIPara<KT, VT>::AFLIPara(uint32_t num_bg) {
+AFLIPara<KT, VT>::AFLIPara(uint32_t num_bg, boost::asio::thread_pool* p) {
   root = nullptr;
+  self_pool = false;
   if (num_bg > 0) {
-    pool = new boost::asio::thread_pool(num_bg);
+    if (p == nullptr) {
+      self_pool = true;
+      pool = new boost::asio::thread_pool(num_bg);
+    } else {
+      pool = p;
+    }
   } else {
     pool = nullptr;
   }
@@ -20,7 +26,7 @@ AFLIPara<KT, VT>::~AFLIPara() {
   if (root != nullptr) {
     delete root;
   }
-  if (pool != nullptr) {
+  if (self_pool) {
     delete pool;
   }
 }
@@ -41,23 +47,23 @@ bool AFLIPara<KT, VT>::find(KT key, VT& value) {
 }
 
 template<typename KT, typename VT>
-bool AFLIPara<KT, VT>::update(KVT kv) {
-  return root->update(kv);
-}
-
-template<typename KT, typename VT>
 bool AFLIPara<KT, VT>::remove(KT key) {
   return root->remove(key);
 }
 
 template<typename KT, typename VT>
+bool AFLIPara<KT, VT>::update(KVT kv) {
+  return root->update(kv);
+}
+
+template<typename KT, typename VT>
 void AFLIPara<KT, VT>::insert(KVT kv) {
-  RebuildInfo<KT, VT>* ri = root->insert(kv, 1, hyper_para);
-  if (ri != nullptr) {
+  AFLIBGParam<KT, VT>* args = root->insert(kv, 1, hyper_para);
+  if (args != nullptr) {
     if (pool != nullptr) {
-      boost::asio::post(*pool, boost::bind(AFLIPara<KT, VT>::rebuild, ri));
+      boost::asio::post(*pool, boost::bind(AFLIPara<KT, VT>::rebuild, args));
     } else { // No background threads, directly rebuild
-      AFLIPara::rebuild(ri);
+      AFLIPara::rebuild(args);
     }
   }
 }
@@ -94,10 +100,10 @@ void AFLIPara<KT, VT>::print_statistics() {
 }
 
 template<typename KT, typename VT>
-void AFLIPara<KT, VT>::rebuild(RebuildInfo<KT, VT>* ri) {
-  TNodePara<KT, VT>* node = ri->node_ptr;
-  uint32_t depth = ri->depth;
-  uint32_t idx = ri->idx;
+void AFLIPara<KT, VT>::rebuild(AFLIBGParam<KT, VT>* args) {
+  TNodePara<KT, VT>* node = args->node_ptr;
+  uint32_t depth = args->depth;
+  uint32_t idx = args->idx;
   Bucket<KT, VT>* bucket = node->entries[idx].bucket;
   assert(bucket->idx == idx);
   assert(bucket->node_id == node->id);
@@ -108,13 +114,13 @@ void AFLIPara<KT, VT>::rebuild(RebuildInfo<KT, VT>* ri) {
       return a.first < b.first;
   });
   delete bucket;
-  TNodePara<KT, VT>* child = new TNodePara<KT, VT>(ri->hyper_para.num_nodes++);
-  child->build(kvs, bucket_size, ri->depth + 1, ri->hyper_para);
+  TNodePara<KT, VT>* child = new TNodePara<KT, VT>(args->hyper_para.num_nodes++);
+  child->build(kvs, bucket_size, args->depth + 1, args->hyper_para);
   node->set_entry_type(idx, kNode);
   node->entries[idx].child = child;
   node->unlock_entry(idx);
   delete[] kvs;
-  delete ri;
+  delete args;
 }
 
 template<typename KT, typename VT>

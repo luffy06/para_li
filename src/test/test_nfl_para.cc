@@ -57,7 +57,8 @@ void* run_requests(void* param) {
 }
 
 template<typename KT, typename VT>
-void test_workload(std::string workload_path) {
+void test_workload(std::string workload_path, std::string weight_path, 
+                   uint32_t buffer_size=128) {
   std::vector<KT> init_keys;
   std::vector<std::pair<KT, VT>> init_kvs;
   std::vector<Request<KT>> reqs;
@@ -70,17 +71,15 @@ void test_workload(std::string workload_path) {
   COUT_INFO("# requests [" << reqs.size() << "]")
 
   auto bulk_load_start = TIME_LOG;
-  NFLPara<KT, VT> nfl(num_bg);
+  NFLPara<KT, VT> nfl(weight_path, buffer_size, num_bg);
   auto bulk_load_mid = TIME_LOG;
   nfl.bulk_load(init_kvs.data(), init_kvs.size());
-  // nfl.print_statistics();
   auto bulk_load_end = TIME_LOG;
   double construct_index_time = TIME_IN_SECOND(bulk_load_start, bulk_load_mid);
   double bulk_load_index_time = TIME_IN_SECOND(bulk_load_mid, bulk_load_end);
 
   COUT_INFO("Bulk loading\t" << construct_index_time << " sec\t"
             << bulk_load_index_time << " sec")
-  COUT_INFO("# Nodes\t" << nfl.hyper_para.num_nodes)
 
   pthread_t threads[num_workers];
   ThreadParam<KT, VT> thread_params[num_workers];
@@ -130,11 +129,12 @@ void test_workload(std::string workload_path) {
 }
 
 template<typename KT, typename VT>
-void test_raw_dataset(std::string data_path) {
+void test_raw_dataset(std::string data_path, std::string weight_path, 
+                      uint32_t buffer_size=128) {
   std::vector<KT> keys;
   load_keyset(data_path, keys);
   uint32_t num_keys = keys.size();
-  NFLPara<KT, VT> nfl(num_bg);
+  NFLPara<KT, VT> nfl(weight_path, buffer_size, num_bg);
   std::vector<uint32_t> idx;
   for (uint32_t i = 0; i < num_keys; ++ i) {
     idx.push_back(i);
@@ -158,7 +158,6 @@ void test_raw_dataset(std::string data_path) {
   // Test bulk loading
   COUT_INFO("Test bulk loading, number of keys [" << init_data.size() << "]")
   nfl.bulk_load(init_data.data(), init_data.size());
-  nfl.print_statistics();
 
   // Test query
   COUT_INFO("Test Querying")
@@ -173,7 +172,6 @@ void test_raw_dataset(std::string data_path) {
   for (uint32_t i = 0; i < insert_data.size(); ++ i) {
     nfl.insert(insert_data[i]);
   }
-  nfl.print_statistics();
   // Test query
   COUT_INFO("Test Querying After Insertion")
   for (uint32_t i = 0; i < init_data.size(); ++ i) {
@@ -191,65 +189,6 @@ void test_raw_dataset(std::string data_path) {
   COUT_INFO("Test Success")
 }
 
-template<typename KT, typename VT>
-void test_synthetic(uint32_t num_data) {
-  std::vector<std::pair<KT, VT>> init_data;
-  std::vector<std::pair<KT, VT>> ins_data;
-  uint32_t num_init_data = num_data / 2;
-  uint32_t num_ins_data = num_data - num_init_data;
-  init_data.reserve(num_init_data);
-  ins_data.reserve(num_ins_data);
-  
-  std::vector<uint32_t> idx;
-  idx.reserve(num_data);
-  for (uint32_t i = 0; i < num_data; ++ i) {
-    idx.push_back(i);
-  }
-  shuffle(idx, 0, idx.size());
-  for (uint32_t i = 0; i < num_init_data; ++ i) {
-    init_data.push_back({idx[i], idx[i]});
-  }
-  for (uint32_t i = num_init_data; i < num_data; ++ i) {
-    ins_data.push_back({idx[i], idx[i]});
-  }
-  std::sort(init_data.begin(), init_data.end(), 
-    [](const auto& a, const auto& b) {
-      return a.first < b.first;
-  });
-
-  NFLPara<KT, VT> nfl(num_bg);
-  nfl.bulk_load(init_data.data(), init_data.size());
-  
-  for (uint32_t i = 0; i < init_data.size(); ++ i) {
-    VT val = 0;
-    nfl.find(init_data[i].first, val);
-    ASSERT_WITH_MSG(val == init_data[i].second, "Find {" << init_data[i].first 
-                    << ", " << init_data[i].second << "}, but got {" << val 
-                    << "}")
-  }
-  
-  for (uint32_t i = 0; i < ins_data.size(); ++ i) {
-    nfl.insert(ins_data[i]);
-  }
-  
-  for (uint32_t i = 0; i < ins_data.size(); ++ i) {
-    VT val = 0;
-    nfl.find(ins_data[i].first, val);
-    ASSERT_WITH_MSG(val == ins_data[i].second, "Find {" << ins_data[i].first 
-                    << ", " << ins_data[i].second << "}, but got {" << val 
-                    << "}")
-  }
-
-  for (uint32_t i = 0; i < init_data.size(); ++ i) {
-    VT val = 0;
-    nfl.find(init_data[i].first, val);
-    ASSERT_WITH_MSG(val == init_data[i].second, "Find {" << init_data[i].first 
-                    << ", " << init_data[i].second << "}, but got {" << val 
-                    << "}")
-  }
-  COUT_INFO("Success")
-}
-
 int main(int argc, char* argv[]) {
   po::options_description desc("Allowed options");
   desc.add_options()
@@ -258,6 +197,10 @@ int main(int argc, char* argv[]) {
      + "--test_type workload --num_workers 1 --num_bg 2").data())
     ("data_path", po::value<std::string>(), 
      "the path of data")
+    ("weight_path", po::value<std::string>(), 
+     "the path of flow weights")
+    ("buffer_size", po::value<uint32_t>(), 
+     "the max size of buffer")
     ("test_type", po::value<std::string>(), 
      "the test type")
     ("key_type", po::value<std::string>(), 
@@ -268,8 +211,6 @@ int main(int argc, char* argv[]) {
      "the number of user threads")
     ("num_bg", po::value<uint32_t>(), 
      "the number of background threads")
-    ("num_data", po::value<uint32_t>(), 
-     "the number of synthetic data")
   ;
 
   po::variables_map vm;
@@ -288,25 +229,27 @@ int main(int argc, char* argv[]) {
   check_options(vm, {"test_type"});
   std::string test_type = vm["test_type"].as<std::string>();
   if (test_type == "raw" || test_type == "workload") {
-    check_options(vm, {"data_path", "key_type", "value_type", "num_workers", 
-                  "num_bg"});
-  } else if (test_type == "synthetic") {
-    check_options(vm, {"num_data", "key_type", "value_type", "num_workers", 
-                  "num_bg"});
+    check_options(vm, {"data_path", "weight_path", "key_type", "value_type", 
+                       "num_workers", "num_bg"});
   }
+  std::string weight_path = vm["weight_path"].as<std::string>();
   std::string key_type = vm["key_type"].as<std::string>();
   std::string value_type = vm["value_type"].as<std::string>();
   num_workers = vm["num_workers"].as<uint32_t>();
   num_bg = vm["num_bg"].as<uint32_t>();
+  uint32_t buffer_size = 128;
+  if (vm.count("buffer_size")) {
+    buffer_size = vm["buffer_size"].as<uint32_t>();
+  }
   COUT_INFO("# user threads: " << num_workers << "\t# bg threads: " << num_bg)
   if (test_type == "raw") {
     std::string data_path = vm["data_path"].as<std::string>();
     if (key_type == "double" && value_type == "uint64") {
-      test_raw_dataset<double, uint64_t>(data_path);
+      test_raw_dataset<double, uint64_t>(data_path, weight_path, buffer_size);
     } else if (key_type == "int64" && value_type == "uint64") {
-      test_raw_dataset<int64_t, uint64_t>(data_path);
+      test_raw_dataset<int64_t, uint64_t>(data_path, weight_path, buffer_size);
     } else if (key_type == "uint64" && value_type == "uint64") {
-      test_raw_dataset<uint64_t, uint64_t>(data_path);
+      test_raw_dataset<uint64_t, uint64_t>(data_path, weight_path, buffer_size);
     } else {
       COUT_ERR("Unsupported key type [" << key_type << "] value type [" 
                << value_type << "]")
@@ -314,23 +257,11 @@ int main(int argc, char* argv[]) {
   } else if (test_type == "workload") {
     std::string data_path = vm["data_path"].as<std::string>();
     if (key_type == "double" && value_type == "uint64") {
-      test_workload<double, uint64_t>(data_path);
+      test_workload<double, uint64_t>(data_path, weight_path, buffer_size);
     } else if (key_type == "int64" && value_type == "uint64") {
-      test_workload<int64_t, uint64_t>(data_path);
+      test_workload<int64_t, uint64_t>(data_path, weight_path, buffer_size);
     } else if (key_type == "uint64" && value_type == "uint64") {
-      test_workload<uint64_t, uint64_t>(data_path);
-    } else {
-      COUT_ERR("Unsupported key type [" << key_type << "] value type [" 
-               << value_type << "]")
-    }
-  } else if (test_type == "synthetic") {
-    uint32_t num_data = vm["num_data"].as<uint32_t>();
-    if (key_type == "double" && value_type == "uint64") {
-      test_synthetic<double, uint64_t>(num_data);
-    } else if (key_type == "int64" && value_type == "uint64") {
-      test_synthetic<int64_t, uint64_t>(num_data);
-    } else if (key_type == "uint64" && value_type == "uint64") {
-      test_synthetic<uint64_t, uint64_t>(num_data);
+      test_workload<uint64_t, uint64_t>(data_path, weight_path, buffer_size);
     } else {
       COUT_ERR("Unsupported key type [" << key_type << "] value type [" 
                << value_type << "]")

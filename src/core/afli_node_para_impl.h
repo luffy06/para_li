@@ -56,35 +56,6 @@ bool TNodePara<KT, VT>::find(KT key, VT& value, uint32_t depth) {
 }
 
 template<typename KT, typename VT>
-bool TNodePara<KT, VT>::update(KVT kv) {
-  // Update the key-value pair in the model node.
-  uint32_t idx = std::min(std::max(model->predict(kv.first), 0L), 
-                          static_cast<int64_t>(capacity - 1));
-  lock_entry(idx);
-  uint8_t type = entry_type(idx);
-  if (type == kData) {
-    bool res = false;
-    if (equal(entries[idx].kv.first, kv.first)) {
-      entries[idx].kv = kv;
-      res = true;
-    } else {
-      res = false;
-    }
-    unlock_entry(idx);
-    return res;
-  } else if (type == kBucket) {
-    Bucket<KT, VT>* bucket = entries[idx].bucket;
-    bool res = bucket->update(kv);
-    unlock_entry(idx);
-    return res;
-  } else {
-    TNodePara<KT, VT>* child = entries[idx].child;
-    unlock_entry(idx);
-    return child->update(kv);
-  }
-}
-
-template<typename KT, typename VT>
 bool TNodePara<KT, VT>::remove(KT key) {
   // Remove the key-value pair in the model node.
   uint32_t idx = std::min(std::max(model->predict(key), 0L), 
@@ -115,7 +86,36 @@ bool TNodePara<KT, VT>::remove(KT key) {
 }
 
 template<typename KT, typename VT>
-RebuildInfo<KT, VT>* TNodePara<KT, VT>::insert(KVT kv, uint32_t depth, 
+bool TNodePara<KT, VT>::update(KVT kv) {
+  // Update the key-value pair in the model node.
+  uint32_t idx = std::min(std::max(model->predict(kv.first), 0L), 
+                          static_cast<int64_t>(capacity - 1));
+  lock_entry(idx);
+  uint8_t type = entry_type(idx);
+  if (type == kData) {
+    bool res = false;
+    if (equal(entries[idx].kv.first, kv.first)) {
+      entries[idx].kv = kv;
+      res = true;
+    } else {
+      res = false;
+    }
+    unlock_entry(idx);
+    return res;
+  } else if (type == kBucket) {
+    Bucket<KT, VT>* bucket = entries[idx].bucket;
+    bool res = bucket->update(kv);
+    unlock_entry(idx);
+    return res;
+  } else {
+    TNodePara<KT, VT>* child = entries[idx].child;
+    unlock_entry(idx);
+    return child->update(kv);
+  }
+}
+
+template<typename KT, typename VT>
+AFLIBGParam<KT, VT>* TNodePara<KT, VT>::insert(KVT kv, uint32_t depth, 
                                                HyperParameter& hyper_para) {
   uint32_t idx = std::min(std::max(model->predict(kv.first), 0L), 
                           static_cast<int64_t>(capacity - 1));
@@ -138,7 +138,7 @@ RebuildInfo<KT, VT>* TNodePara<KT, VT>::insert(KVT kv, uint32_t depth,
     bucket = entries[idx].bucket;
     bool need_rebuild = bucket->insert(kv, hyper_para.max_bucket_size);
     if (need_rebuild) {
-      return new RebuildInfo(this, depth, idx, hyper_para);
+      return new AFLIBGParam(this, depth, idx, hyper_para);
     } else {
       unlock_entry(idx);
       return nullptr;

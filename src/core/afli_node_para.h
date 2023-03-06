@@ -46,14 +46,14 @@ union Entry {
 };
 
 template<typename KT, typename VT>
-struct RebuildInfo {
+struct AFLIBGParam {
   TNodePara<KT, VT>*          node_ptr;
   uint32_t                    depth;
   uint32_t                    idx;
   HyperParameter&             hyper_para;
 
-  RebuildInfo(TNodePara<KT, VT>* t, uint32_t d, uint32_t i, HyperParameter& h) 
-             : node_ptr(t), depth(d), idx(i), hyper_para(h) { }
+  AFLIBGParam(TNodePara<KT, VT>* a, uint32_t b, uint32_t c, HyperParameter& d) 
+              : node_ptr(a), depth(b), idx(c), hyper_para(d) { }
 };
 
 template<typename KT, typename VT>
@@ -81,9 +81,9 @@ public:
 
   // User API interfaces
   bool find(KT key, VT& value, uint32_t depth=1);
-  bool update(KVT kv);
   bool remove(KT key);
-  RebuildInfo<KT, VT>* insert(KVT kv, uint32_t depth, 
+  bool update(KVT kv);
+  AFLIBGParam<KT, VT>* insert(KVT kv, uint32_t depth, 
                               HyperParameter& hyper_para);
 
 private:

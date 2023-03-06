@@ -6,14 +6,26 @@
 namespace aflipara {
 
 template<typename KT, typename VT>
-NFLPara<KT, VT>::NFLPara(std::string weights_path, uint32_t bs, uint32_t nb) 
-                         : batch_size(bs), num_bg(nb) { 
-  this->enable_flow = true;
-  this->flow = new NumericalFlow<KT, VT>(weights_path, bs);
+NFLPara<KT, VT>::NFLPara(std::string weight_path, uint32_t mbs, uint32_t nb) 
+                         : max_buffer_size(mbs), num_bg(nb) { 
+  this->enable_flow = weight_path != "";
+  if (weight_path != "") {
+    this->flow = new NumericalFlow<KT, VT>(weight_path, kMaxBatchSize);
+  } else {
+    this->flow = nullptr;
+  }
   this->index = nullptr;
   this->tran_index = nullptr;
-  this->tran_kvs = nullptr;
-  this->batch_kvs = nullptr;
+  this->buffer_size = 0;
+  this->buffer = new KVT[mbs];
+  this->imm_buffer = nullptr;
+  this->buffer_lock = 0;
+  this->imm_buffer_lock = 0;
+  if (nb > 0) {
+    this->pool = new boost::asio::thread_pool(nb);
+  } else {
+    this->pool = nullptr;
+  }
 }
 
 template<typename KT, typename VT>
@@ -27,117 +39,210 @@ NFLPara<KT, VT>::~NFLPara() {
   if (tran_index != nullptr) {
     delete tran_index;
   }
-  if (tran_kvs != nullptr) {
-    delete[] tran_kvs;
+  if (buffer != nullptr) {
+    delete[] buffer;
   }
-  if (batch_kvs != nullptr) {
-    delete[] batch_kvs;
+  if (imm_buffer != nullptr) {
+    delete[] imm_buffer;
+  }
+  if (pool != nullptr) {
+    delete pool;
   }
 }
 
 template<typename KT, typename VT>
-void NFLPara<KT, VT>::set_batch_size(uint32_t batch_size) {
-  if (batch_size > this->batch_size) {
-    if (enable_flow) {
-      delete[] tran_kvs;
-      tran_kvs = new KKVT[batch_size];
-    } else {
-      delete[] batch_kvs;
-      batch_kvs = new KVT[batch_size];
-    }
-  }
-  this->batch_size = batch_size;
+bool NFLPara<KT, VT>::buffer_locked() {
+  return this->buffer_lock;
 }
 
 template<typename KT, typename VT>
-uint32_t NFLPara<KT, VT>::auto_switch(const KVT* kvs, uint32_t size, 
-                              uint32_t aggregate_size) {
-  tran_kvs = new KKVT[size];
-  uint32_t origin_tail_conflicts = compute_tail_conflicts(kvs, size, 
-                                                          kSizeAmplification, 
-                                                          kTailPercent);
-  flow->set_batch_size(kMaxBatchSize);
-  flow->transform(kvs, size, tran_kvs);
-  std::sort(tran_kvs, tran_kvs + size, [](auto const& a, auto const& b) {
-    return a.first < b.first;
-  });
-  uint32_t tran_tail_conflicts = compute_tail_conflicts(tran_kvs, size, 
-                                                        kSizeAmplification, 
-                                                        kTailPercent);
-  if (origin_tail_conflicts <= tran_tail_conflicts
-      || origin_tail_conflicts - tran_tail_conflicts 
-      < static_cast<uint32_t>(origin_tail_conflicts * kConflictsDecay)) {
-    enable_flow = false;
-    delete[] tran_kvs;
-    tran_kvs = nullptr;
-    return origin_tail_conflicts;
-  } else {
-    enable_flow = true;
-    return tran_tail_conflicts;
-  }
+void NFLPara<KT, VT>::lock_buffer() {
+  uint8_t unlocked = 0, locked = 1;
+  while (unlikely(cmpxchgb((uint8_t *)&this->buffer_lock, unlocked, locked) !=
+                  unlocked))
+    ;
+}
+
+template<typename KT, typename VT>
+void NFLPara<KT, VT>::unlock_buffer() {
+  buffer_lock = 0;
+}
+
+template<typename KT, typename VT>
+bool NFLPara<KT, VT>::imm_buffer_locked() {
+  return this->imm_buffer_lock;
+}
+
+template<typename KT, typename VT>
+void NFLPara<KT, VT>::lock_imm_buffer() {
+  uint8_t unlocked = 0, locked = 1;
+  while (unlikely(cmpxchgb((uint8_t *)&this->imm_buffer_lock, unlocked, locked) !=
+                  unlocked))
+    ;
+}
+
+template<typename KT, typename VT>
+void NFLPara<KT, VT>::unlock_imm_buffer() {
+  imm_buffer_lock = 0;
+}
+
+template<typename KT, typename VT>
+void NFLPara<KT, VT>::set_max_buffer_size(uint32_t mbs) {
+  this->max_buffer_size = mbs;
+  this->buffer.reserve(mbs);
 }
 
 template<typename KT, typename VT>
 void NFLPara<KT, VT>::bulk_load(const KVT* kvs, uint32_t size, 
-                                uint32_t tail_conflicts, 
-                                uint32_t aggregate_size) {
-  if (enable_flow) {
-    tran_index = new AFLIPara<KT, KVT>(num_bg);
-    tran_index->bulk_load(tran_kvs, size);
-    flow->set_batch_size(batch_size);
-    delete[] tran_kvs;
-    tran_kvs = new KKVT[batch_size];
-  } else {
-    index = new AFLIPara<KT, VT>(num_bg);
+                                bool enable_flow) {
+  if (!enable_flow) {
+    index = new AFLIPara<KT, VT>(num_bg, pool);
     index->bulk_load(kvs, size);
-    delete[] batch_kvs;
-    batch_kvs = new KVT[batch_size];      
-  }
-}
-
-template<typename KT, typename VT>
-void NFLPara<KT, VT>::transform(const KVT* kvs, uint32_t size) {
-  if (enable_flow) {
+  } else {
+    KKVT* tran_kvs = new KKVT[size];
+    int32_t origin_tail_conflicts = compute_tail_conflicts(kvs, size, 
+                                                            kSizeAmplification, 
+                                                            kTailPercent);
+    flow->set_batch_size(kMaxBatchSize);
     flow->transform(kvs, size, tran_kvs);
-  } else {
-    std::memcpy(batch_kvs, kvs, sizeof(KVT) * size);
+    std::sort(tran_kvs, tran_kvs + size, [](auto const& a, auto const& b) {
+      return a.first < b.first;
+    });
+    int32_t tran_tail_conflicts = compute_tail_conflicts(tran_kvs, size, 
+                                                          kSizeAmplification, 
+                                                          kTailPercent);
+    if (origin_tail_conflicts - tran_tail_conflicts 
+        < static_cast<int32_t>(origin_tail_conflicts * kConflictsDecay)) {
+      enable_flow = false;
+      index = new AFLIPara<KT, VT>(num_bg, pool);
+      index->bulk_load(kvs, size);
+    } else {
+      tran_index = new AFLIPara<KT, KVT>(num_bg, pool);
+      tran_index->bulk_load(tran_kvs, size);
+      flow->set_batch_size(buffer_size);
+    }
+    delete[] tran_kvs;
   }
 }
 
 template<typename KT, typename VT>
-bool NFLPara<KT, VT>::find(uint32_t idx_in_batch, VT& value) {
-  if (enable_flow) {
-    return tran_index->find(tran_kvs[idx_in_batch].first, value);
+bool NFLPara<KT, VT>::find(KT key, VT& value) {
+  bool in_buffer = false;
+  lock_buffer();
+  for (uint32_t i = 0; i < buffer_size; ++ i) {
+    if (equal(key, buffer[i].first)) {
+      value = buffer[i].second;
+      in_buffer = true;
+    }
+  }
+  unlock_buffer();
+  if (in_buffer) {
+    return true;
   } else {
-    return index->find(batch_kvs[idx_in_batch].first, value);
+    if (enable_flow) {
+      KKVT tran_kv = flow->transform({key, 0});
+      KVT kv;
+      bool res = tran_index->find(tran_kv.first, kv);
+      value = kv.second;
+      return res;
+    } else {
+      return index->find(key, value);
+    }
   }
 }
 
 template<typename KT, typename VT>
-bool NFLPara<KT, VT>::update(uint32_t idx_in_batch) {
-  if (enable_flow) {
-    return tran_index->update(tran_kvs[idx_in_batch]);
+bool NFLPara<KT, VT>::remove(KT key) {
+  bool in_buffer = false;
+  lock_buffer();
+  for (uint32_t i = 0; i < buffer_size; ++ i) {
+    if (equal(key, buffer[i].first)) {
+      in_buffer = true;
+    }
+    if (in_buffer) {
+      if (i < buffer_size - 1) {
+        buffer[i] = buffer[i + 1];
+      } else {
+        buffer_size --;
+      }
+    }
+  }
+  unlock_buffer();
+  if (in_buffer) {
+    return true;
   } else {
-    return index->update(batch_kvs[idx_in_batch]);
+    if (enable_flow) {
+      KKVT tran_kv = flow->transform({key, 0});
+      return tran_index->remove(tran_kv.first);
+    } else {
+      return index->remove(key);
+    }
   }
 }
 
 template<typename KT, typename VT>
-bool NFLPara<KT, VT>::remove(uint32_t idx_in_batch) {
-  if (enable_flow) {
-    return tran_index->remove(tran_kvs[idx_in_batch].first);
-  } else {
-    return index->remove(batch_kvs[idx_in_batch].first);
+bool NFLPara<KT, VT>::update(KVT kv) {
+  bool in_buffer = false;
+  lock_buffer();
+  for (uint32_t i = 0; i < buffer_size; ++ i) {
+    if (equal(kv.first, buffer[i].first)) {
+      buffer[i] = kv;
+      in_buffer = true;
+    }
   }
+  unlock_buffer();
+  if (in_buffer) {
+    return true;
+  } else {
+    if (enable_flow) {
+      KKVT tran_kv = flow->transform(kv);
+      return tran_index->update(tran_kv);
+    } else {
+      return index->update(kv);
+    }
+  } 
 }
 
 template<typename KT, typename VT>
-void NFLPara<KT, VT>::insert(uint32_t idx_in_batch) {
-  if (enable_flow) {
-    tran_index->insert(tran_kvs[idx_in_batch]);
-  } else {
-    index->insert(batch_kvs[idx_in_batch]);
+void NFLPara<KT, VT>::insert(KVT kv) {
+  lock_buffer();
+  buffer[buffer_size] = kv;
+  buffer_size ++;
+  if (buffer_size == max_buffer_size) {
+    while (imm_buffer_locked()) { }
+    lock_imm_buffer();
+    imm_buffer = buffer;
+    buffer = new KVT[max_buffer_size];
+    buffer_size = 0;
+    if (pool != nullptr) {
+      boost::asio::post(*pool, boost::bind(NFLPara<KT, VT>::bg_insert, this));
+    } else {
+      NFLPara<KT, VT>::bg_insert(this);
+    }
   }
+  unlock_buffer();
+}
+
+template<typename KT, typename VT>
+void NFLPara<KT, VT>::bg_insert(void* args) {
+  NFLPara<KT, VT>* nfl = (NFLPara<KT, VT>*)(args);
+  KVT* kvs = nfl->imm_buffer;
+  uint32_t size = nfl->max_buffer_size;
+  if (nfl->enable_flow) {
+    KKVT* tran_kvs = new KKVT[size];
+    nfl->flow->transform(kvs, size, tran_kvs);
+    for (uint32_t i = 0; i < size; ++ i) {
+      nfl->tran_index->insert(tran_kvs[i]);
+    }
+    delete[] tran_kvs;
+  } else {
+    for (uint32_t i = 0; i < size; ++ i) {
+      nfl->index->insert(kvs[i]);
+    }
+  }
+  delete[] nfl->imm_buffer;
+  nfl->imm_buffer = nullptr;
+  nfl->unlock_imm_buffer();
 }
 
 template<typename KT, typename VT>
@@ -153,9 +258,9 @@ template<typename KT, typename VT>
 uint64_t NFLPara<KT, VT>::index_size() {
   if (enable_flow) {
     return tran_index->index_size() + flow->size() 
-          + sizeof(NFLPara<KT, VT>) + sizeof(KKVT) * batch_size;
+          + sizeof(NFLPara<KT, VT>);
   } else {
-    return index->index_size() + sizeof(NFLPara<KT, VT>) + sizeof(KVT) * batch_size;
+    return index->index_size() + sizeof(NFLPara<KT, VT>);
   }
 }
 
