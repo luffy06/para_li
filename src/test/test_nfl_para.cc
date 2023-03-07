@@ -80,6 +80,7 @@ void test_workload(std::string workload_path, std::string weight_path,
 
   COUT_INFO("Bulk loading\t" << construct_index_time << " sec\t"
             << bulk_load_index_time << " sec")
+  exit(-1);
 
   pthread_t threads[num_workers];
   ThreadParam<KT, VT> thread_params[num_workers];
@@ -129,7 +130,7 @@ void test_workload(std::string workload_path, std::string weight_path,
 }
 
 template<typename KT, typename VT>
-void test_raw_dataset(std::string data_path, std::string weight_path, 
+void test_keyset(std::string data_path, std::string weight_path, 
                       uint32_t buffer_size=128) {
   std::vector<KT> keys;
   load_keyset(data_path, keys);
@@ -242,14 +243,14 @@ int main(int argc, char* argv[]) {
     buffer_size = vm["buffer_size"].as<uint32_t>();
   }
   COUT_INFO("# user threads: " << num_workers << "\t# bg threads: " << num_bg)
-  if (test_type == "raw") {
+  if (test_type == "keyset") {
     std::string data_path = vm["data_path"].as<std::string>();
     if (key_type == "double" && value_type == "uint64") {
-      test_raw_dataset<double, uint64_t>(data_path, weight_path, buffer_size);
+      test_keyset<double, uint64_t>(data_path, weight_path, buffer_size);
     } else if (key_type == "int64" && value_type == "uint64") {
-      test_raw_dataset<int64_t, uint64_t>(data_path, weight_path, buffer_size);
+      test_keyset<int64_t, uint64_t>(data_path, weight_path, buffer_size);
     } else if (key_type == "uint64" && value_type == "uint64") {
-      test_raw_dataset<uint64_t, uint64_t>(data_path, weight_path, buffer_size);
+      test_keyset<uint64_t, uint64_t>(data_path, weight_path, buffer_size);
     } else {
       COUT_ERR("Unsupported key type [" << key_type << "] value type [" 
                << value_type << "]")

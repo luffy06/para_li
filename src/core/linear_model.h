@@ -25,7 +25,7 @@ class LinearModel {
 template<class KT>
 class LinearModelBuilder {
  public:
-  int32_t count;
+  uint32_t count;
   double x_sum;
   double y_sum;
   double xx_sum;
@@ -44,7 +44,7 @@ class LinearModelBuilder {
   inline void add(KT x, double y) {
     count++;
     x_sum += static_cast<double>(x);
-    y_sum += static_cast<double>(y);
+    y_sum += y;
     xx_sum += static_cast<double>(x) * x;
     xy_sum += static_cast<double>(x) * y;
     x_min = std::min(x, x_min);
@@ -69,17 +69,15 @@ class LinearModelBuilder {
       return ;
     }
 
-    auto slope = static_cast<double>(
-                 (static_cast<double>(count) * xy_sum - x_sum * y_sum) /
-                 (static_cast<double>(count) * xx_sum - x_sum * x_sum));
-    auto intercept = static_cast<double>(
-                     (y_sum - static_cast<double>(slope) * x_sum) / count);
+    double slope = (static_cast<double>(count) * xy_sum - x_sum * y_sum) 
+                   / (static_cast<double>(count) * xx_sum - x_sum * x_sum);
+    double intercept = (y_sum - slope * x_sum) / static_cast<double>(count);
     lrm->slope = slope;
     lrm->intercept = intercept;
 
     // If floating point precision errors, fit spline
     if (lrm->slope <= 0) {
-      lrm->slope = 1. * (y_max - y_min) / (x_max - x_min);
+      lrm->slope = (y_max - y_min) / static_cast<double>(x_max - x_min);
       lrm->intercept = -static_cast<double>(x_min) * lrm->slope;
     }
   }

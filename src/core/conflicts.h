@@ -46,12 +46,13 @@ ConflictsInfo* build_linear_model(const std::pair<KT, VT>* kvs, uint32_t size,
   KT max_key = kvs[size - 1].first;
   ASSERT_WITH_MSG(!equal(min_key, max_key), "Range [" << min_key << ", " 
                   << max_key << "], Size: " << size 
-                  << ", all keys used to +build the linear model are the same.")
+                  << ", all keys used to build the linear model are the same.")
   double key_space = max_key - min_key;
   uint32_t capacity = static_cast<uint32_t>(size * size_amp);
   LinearModelBuilder<KT> builder;
   for (uint32_t i = 0; i < size; ++ i) {
-    double key = (kvs[i].first - min_key) / (max_key - min_key);
+    // double key = (kvs[i].first - min_key) / (max_key - min_key);
+    double key = kvs[i].first;
     double y = i;
     builder.add(key, y);
   }
@@ -62,7 +63,7 @@ ConflictsInfo* build_linear_model(const std::pair<KT, VT>* kvs, uint32_t size,
              << "keys ranging from [" << min_key << "] to [" << max_key 
              << "] are too large.")
   } else {
-    model->slope = model->slope / key_space;
+    // model->slope = model->slope / key_space;
     model->intercept = -model->slope * min_key + 0.5;
     ASSERT_WITH_MSG(model->predict(min_key) == 0, 
                     "The first prediction must be zero")
@@ -77,9 +78,9 @@ ConflictsInfo* build_linear_model(const std::pair<KT, VT>* kvs, uint32_t size,
     if (last_pos == first_pos) {
       // Model fails to predict since all predicted positions are rounded to 
       // the same one
-      // COUT_INFO("The last predicted position [" << last_pos 
-      //           << "] is the same as the first predicted position [" 
-      //           << first_pos << "]");
+      COUT_INFO("The last predicted position [" << last_pos 
+                << "] is the same as the first predicted position [" 
+                << first_pos << "]");
       model->slope = size / key_space;
       model->intercept = -model->slope * min_key + 0.5;
     }
@@ -117,7 +118,7 @@ uint32_t compute_tail_conflicts(const std::pair<KT, VT>* kvs, uint32_t size,
     return 0;
   } else {
     std::sort(ci->conflicts, ci->conflicts + ci->num_conflicts);
-    int tail_idx = int(ci->num_conflicts * kTailPercent) - 1;
+    int32_t tail_idx = int32_t(ci->num_conflicts * kTailPercent) - 1;
     uint32_t tail_conflicts = ci->conflicts[std::max(0, tail_idx)];
     delete ci;
     return tail_conflicts - 1;

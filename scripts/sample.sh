@@ -4,15 +4,16 @@ set -e  # fail and exit on any command erroring
 
 if [ "$#" -ne 1 ]; then
   echo "Illegal number of parameters"
-  echo "Usage: ./sample.sh (keyset directory)"
+  echo "Usage: ./sample.sh (data directory)"
   exit
 fi
 
 root_dir=$(cd `dirname $0`/..; pwd)
 build_dir=${root_dir}/build
-keyset_dir=${1}
+data_dir=${1}
 train_dir=${root_dir}/nf_train
 exec=${build_dir}/sample
+data_type='workload'
 
 if [ ! -d ${train_dir} ];
 then
@@ -38,31 +39,37 @@ for sample_ratio in ${sample_ratios[*]}
 do
   for workload in ${uint64_workloads[*]}
   do
-    echo 'Sample '${workload}
-    key_path=${keyset_dir}/${workload}.bin
-    if [ -f ${key_path} ];
-    then
-      echo `${exec} --key_path=${key_path} --key_type=${key_type[$workload]} --sample_ratio=${sample_ratio} --output_dir=${train_dir}`
-    fi
+    for key_path in ${data_dir}/${workload}*.bin
+    do
+      echo 'Sample '`basename ${key_path}`
+      if [ -f ${key_path} ];
+      then
+        echo `${exec} --key_path=${key_path} --data_type=${data_type} --key_type=${key_type[$workload]} --sample_ratio=${sample_ratio} --output_dir=${train_dir}`
+      fi
+    done
   done
 
   for workload in ${int64_workloads[*]}
   do
-    echo 'Sample '${workload}
-    key_path=${keyset_dir}/${workload}.bin
-    if [ -f ${key_path} ];
-    then
-      echo `${exec} --key_path=${key_path} --key_type=${key_type[$workload]} --sample_ratio=${sample_ratio} --output_dir=${train_dir}`
-    fi
+    for key_path in ${data_dir}/${workload}*.bin
+    do
+      echo 'Sample '`basename ${key_path}`
+      if [ -f ${key_path} ];
+      then
+        echo `${exec} --key_path=${key_path} --data_type=${data_type} --key_type=${key_type[$workload]} --sample_ratio=${sample_ratio} --output_dir=${train_dir}`
+      fi
+    done
   done
 
   for workload in ${double_workloads[*]}
   do
-    echo 'Sample '${workload}
-    key_path=${keyset_dir}/${workload}.bin
-    if [ -f ${key_path} ];
-    then
-      echo `${exec} --key_path=${key_path} --key_type=${key_type[$workload]} --sample_ratio=${sample_ratio} --output_dir=${train_dir}`
-    fi
+    for key_path in ${data_dir}/${workload}*.bin
+    do
+      echo 'Sample '`basename ${key_path}`
+      if [ -f ${key_path} ];
+      then
+        echo `${exec} --key_path=${key_path} --data_type=${data_type} --key_type=${key_type[$workload]} --sample_ratio=${sample_ratio} --output_dir=${train_dir}`
+      fi
+    done
   done
 done

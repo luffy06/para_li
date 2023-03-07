@@ -30,6 +30,8 @@ int main(int argc, char* argv[]) {
      + "--key_type uint64 --sample_ratio 0.1 --output_dir nf_train").data())
     ("key_path", po::value<std::string>(), 
      "the path of key set")
+    ("data_type", po::value<std::string>(), 
+     "the data type, e.g., keyset, workload")
     ("key_type", po::value<std::string>(), 
      "the key type of workload, e.g., double, int32, int64")
     ("sample_ratio", po::value<double>(), 
@@ -51,8 +53,9 @@ int main(int argc, char* argv[]) {
     return 0;
   }
 
-  check_options(vm, {"key_path", "key_type", "output_dir"});
+  check_options(vm, {"key_path", "data_type", "key_type", "output_dir"});
   std::string key_path = vm["key_path"].as<std::string>();
+  std::string data_type = vm["data_type"].as<std::string>();
   std::string key_type = vm["key_type"].as<std::string>();
   std::string output_dir = vm["output_dir"].as<std::string>();
   double sample_ratio = 1;
@@ -64,20 +67,41 @@ int main(int argc, char* argv[]) {
   std::string suffix = std::string("-") + tostr(uint32_t(sample_ratio * 100)) 
                        + "P-training.txt";
   output_path.replace(output_path.find(".bin"), 4, suffix);
-  if (key_type == "double") {
-    std::vector<double> keys;
-    load_keyset(key_path, keys);
-    sample_keys(keys, sample_ratio, output_path);
-  } else if (key_type == "int64") {
-    std::vector<int64_t> keys;
-    load_keyset(key_path, keys);
-    sample_keys(keys, sample_ratio, output_path);
-  } else if (key_type == "uint64") {
-    std::vector<uint64_t> keys;
-    load_keyset(key_path, keys);
-    sample_keys(keys, sample_ratio, output_path);
-  } else {
-    COUT_ERR("Unsupported key type\t" << key_type)
+  if (data_type == "keyset") {
+    if (key_type == "double") {
+      std::vector<double> keys;
+      load_keyset(key_path, keys);
+      sample_keys(keys, sample_ratio, output_path);
+    } else if (key_type == "int64") {
+      std::vector<int64_t> keys;
+      load_keyset(key_path, keys);
+      sample_keys(keys, sample_ratio, output_path);
+    } else if (key_type == "uint64") {
+      std::vector<uint64_t> keys;
+      load_keyset(key_path, keys);
+      sample_keys(keys, sample_ratio, output_path);
+    } else {
+      COUT_ERR("Unsupported key type\t" << key_type)
+    }
+  } else if (data_type == "workload") {
+    if (key_type == "double") {
+      std::vector<double> init_data;
+      std::vector<Request<double>> work_reqs;
+      load_workload(key_path, init_data, work_reqs);
+      sample_keys(init_data, sample_ratio, output_path);
+    } else if (key_type == "int64") {
+      std::vector<int64_t> init_data;
+      std::vector<Request<int64_t>> work_reqs;
+      load_workload(key_path, init_data, work_reqs);
+      sample_keys(init_data, sample_ratio, output_path);
+    } else if (key_type == "uint64") {
+      std::vector<uint64_t> init_data;
+      std::vector<Request<uint64_t>> work_reqs;
+      load_workload(key_path, init_data, work_reqs);
+      sample_keys(init_data, sample_ratio, output_path);
+    } else {
+      COUT_ERR("Unsupported key type\t" << key_type)
+    }
   }
   return 0;
 }

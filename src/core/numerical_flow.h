@@ -9,44 +9,44 @@ namespace aflipara {
 template<typename KT, typename VT>
 class NumericalFlow {
 typedef std::pair<KT, VT> KVT;
-typedef std::pair<KT, KVT> KKVT;
+typedef std::pair<double, KVT> KKVT;
 public:
-  double mean_;
-  double var_;
-  MKL_INT batch_size_;
-  BNAF_Infer<KT, VT> model_;
+  double mean;
+  double var;
+  MKL_INT batch_size;
+  BNAF_Infer<KT, VT> model;
 
 public:
-  explicit NumericalFlow(std::string weight_path, uint32_t batch_size) 
-    : batch_size_(batch_size) {
+  explicit NumericalFlow(std::string weight_path, uint32_t bs) 
+    : batch_size(bs) {
     load(weight_path);
-    model_.set_batch_size(batch_size);
+    model.set_batch_size(bs);
   }
 
   uint64_t size() {
-    return sizeof(NumericalFlow<KT, VT>) - sizeof(BNAF_Infer<KT, VT>) + model_.size();
+    return sizeof(NumericalFlow<KT, VT>) - sizeof(BNAF_Infer<KT, VT>) + model.size();
   }
 
-  void set_batch_size(uint32_t batch_size) {
-    batch_size_ = batch_size;
-    model_.set_batch_size(batch_size_);
+  void set_batch_size(uint32_t bs) {
+    batch_size = bs;
+    model.set_batch_size(batch_size);
   }
 
   void transform(const KVT* kvs, uint32_t size, KKVT* tran_kvs) {
     for (uint32_t i = 0; i < size; ++ i) {
-      tran_kvs[i] = {(kvs[i].first - mean_) / var_, kvs[i]};
+      tran_kvs[i] = {(kvs[i].first - mean) / var, kvs[i]};
     }
-    uint32_t num_batches = static_cast<uint32_t>(std::ceil(size * 1. / batch_size_));
+    uint32_t num_batches = static_cast<uint32_t>(std::ceil(size * 1. / batch_size));
     for (uint32_t i = 0; i < num_batches; ++ i) {
-      uint32_t l = i * batch_size_;
-      uint32_t r = std::min((i + 1) * batch_size_, size);
-      model_.transform(tran_kvs + l, r - l);
+      uint32_t l = i * batch_size;
+      uint32_t r = std::min((i + 1) * batch_size, size);
+      model.transform(tran_kvs + l, r - l);
     }
   }
 
   KKVT transform(const KVT kv) {
-    KKVT t_kv = {(kv.first - mean_) / var_, kv};
-    model_.transform(&t_kv, 1);
+    KKVT t_kv = {(kv.first - mean) / var, kv};
+    model.transform(&t_kv, 1);
     return t_kv;
   }
 
@@ -57,16 +57,16 @@ private:
       std::cout << "File:" << path << " doesn't exist" << std::endl;
       exit(-1);
     }
-    in >> model_.in_dim_ >> model_.hidden_dim_ >> model_.num_layers_;
-    in >> mean_ >> var_;
-    model_.weights_ = new double*[model_.num_layers_];
-    for (uint32_t w = 0; w < model_.num_layers_; ++ w) {
+    in >> model.in_dim >> model.hidden_dim >> model.num_layers;
+    in >> mean >> var;
+    model.weights = new double*[model.num_layers];
+    for (uint32_t w = 0; w < model.num_layers; ++ w) {
       uint32_t n, m;
       in >> n >> m;
-      model_.weights_[w] = (double*)mkl_calloc(n * m, sizeof(double), 64);
+      model.weights[w] = (double*)mkl_calloc(n * m, sizeof(double), 64);
       for (uint32_t i = 0; i < n; ++ i) {
         for (uint32_t j = 0; j < m; ++ j) {
-          in >> model_.weights_[w][i * m + j];
+          in >> model.weights[w][i * m + j];
         }
       }
     }

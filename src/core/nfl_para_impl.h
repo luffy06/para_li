@@ -100,28 +100,36 @@ void NFLPara<KT, VT>::bulk_load(const KVT* kvs, uint32_t size,
     index->bulk_load(kvs, size);
   } else {
     KKVT* tran_kvs = new KKVT[size];
-    int32_t origin_tail_conflicts = compute_tail_conflicts(kvs, size, 
+    uint32_t origin_tail_conflicts = compute_tail_conflicts(kvs, size, 
                                                             kSizeAmplification, 
                                                             kTailPercent);
-    flow->set_batch_size(kMaxBatchSize);
+    flow->set_batch_size(32);
     flow->transform(kvs, size, tran_kvs);
     std::sort(tran_kvs, tran_kvs + size, [](auto const& a, auto const& b) {
       return a.first < b.first;
     });
-    int32_t tran_tail_conflicts = compute_tail_conflicts(tran_kvs, size, 
+    uint32_t tran_tail_conflicts = compute_tail_conflicts(tran_kvs, size, 
                                                           kSizeAmplification, 
                                                           kTailPercent);
-    if (origin_tail_conflicts - tran_tail_conflicts 
-        < static_cast<int32_t>(origin_tail_conflicts * kConflictsDecay)) {
+    COUT_INFO("Origin Tail Conflicts\t" << origin_tail_conflicts
+              << "\nTransformed Tail Conflicts\t" << tran_tail_conflicts)
+    exit(-1);
+    if (static_cast<int64_t>(origin_tail_conflicts) - tran_tail_conflicts 
+        < static_cast<int64_t>(origin_tail_conflicts * kConflictsDecay)) {
       enable_flow = false;
       index = new AFLIPara<KT, VT>(num_bg, pool);
       index->bulk_load(kvs, size);
     } else {
-      tran_index = new AFLIPara<KT, KVT>(num_bg, pool);
+      tran_index = new AFLIPara<double, KVT>(num_bg, pool);
       tran_index->bulk_load(tran_kvs, size);
       flow->set_batch_size(buffer_size);
     }
     delete[] tran_kvs;
+  }
+  if (enable_flow) {
+    COUT_INFO("Enable Flow");
+  } else {
+    COUT_INFO("Disable Flow");
   }
 }
 
@@ -137,8 +145,10 @@ bool NFLPara<KT, VT>::find(KT key, VT& value) {
   }
   unlock_buffer();
   if (in_buffer) {
+    COUT_INFO("Find in buffer");
     return true;
   } else {
+    COUT_INFO("Start to find in index");
     if (enable_flow) {
       KKVT tran_kv = flow->transform({key, 0});
       KVT kv;

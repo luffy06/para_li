@@ -11,7 +11,7 @@ namespace aflipara {
 template<typename KT, typename VT>
 class NFLPara {
 typedef std::pair<KT, VT> KVT;
-typedef std::pair<KT, KVT> KKVT;
+typedef std::pair<double, KVT> KKVT;
 public:
   uint32_t num_bg;
   // A global buffer 
@@ -29,7 +29,7 @@ public:
 
   bool enable_flow;
   NumericalFlow<KT, VT>* flow;
-  AFLIPara<KT, KVT>* tran_index;
+  AFLIPara<double, KVT>* tran_index;
 
   const float kConflictsDecay = 0.1;
   const uint32_t kMaxBatchSize = 4196;
