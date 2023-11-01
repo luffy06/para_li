@@ -5,7 +5,6 @@
 
 namespace aflipara {
 
-template<class KT>
 class LinearModel {
  public:
   double slope;
@@ -13,16 +12,15 @@ class LinearModel {
 
   LinearModel() : slope(0), intercept(0) { }
 
-  inline int64_t predict(KT key) const {
+  inline int64_t predict(double key) const {
     return static_cast<int64_t>(std::floor(slope * key + intercept));
   }
 
-  inline double predict_double(KT key) const {
+  inline double predict_double(double key) const {
     return slope * static_cast<double>(key) + intercept;
   }
 };
 
-template<class KT>
 class LinearModelBuilder {
  public:
   uint32_t count;
@@ -30,18 +28,18 @@ class LinearModelBuilder {
   double y_sum;
   double xx_sum;
   double xy_sum;
-  KT x_min;
-  KT x_max;
+  double x_min;
+  double x_max;
   double y_min;
   double y_max;
 
   LinearModelBuilder() : count(0), x_sum(0), y_sum(0), xx_sum(0), xy_sum(0), 
-                         x_min(std::numeric_limits<KT>::max()), 
-                         x_max(std::numeric_limits<KT>::lowest()),
+                         x_min(std::numeric_limits<double>::max()), 
+                         x_max(std::numeric_limits<double>::lowest()),
                          y_min(std::numeric_limits<double>::max()), 
                          y_max(std::numeric_limits<double>::lowest()) { }
 
-  inline void add(KT x, double y) {
+  inline void add(double x, double y) {
     count++;
     x_sum += static_cast<double>(x);
     y_sum += y;
@@ -55,7 +53,7 @@ class LinearModelBuilder {
 
   // TODO: the calculated slope or intercept is too small or too large, the 
   // precision is lost.
-  void build(LinearModel<KT> *lrm) {
+  void build(LinearModel* lrm) {
     if (count <= 1) {
       lrm->slope = 0;
       lrm->intercept = static_cast<double>(y_sum);

@@ -30,11 +30,13 @@ bool TNodePara<KT, VT>::find(KT key, VT& value, uint32_t depth) {
   // Find the key-value pair in the model node.
   uint32_t idx = std::min(std::max(model->predict(key), 0L), 
                           static_cast<int64_t>(capacity - 1));
+  // COUT_INFO("Depth " << depth << ", finding in the " << idx << "th slot of the " << id << "th node.")
   lock_entry(idx);
   uint8_t type = entry_type(idx);
   if (type == kData) {
     KVT kv = entries[idx].kv;
     unlock_entry(idx);
+    // COUT_INFO("Locate in the entry");
     if (equal(kv.first, key)) {
       value = kv.second;
       return true;
@@ -46,6 +48,7 @@ bool TNodePara<KT, VT>::find(KT key, VT& value, uint32_t depth) {
     ASSERT_WITH_MSG(bucket != nullptr, "Null bucket");
     bool res = bucket->find(key, value);
     unlock_entry(idx);
+    // COUT_INFO("Locate in the bucket");
     return res;
   } else {
     TNodePara<KT, VT>* child = entries[idx].child;

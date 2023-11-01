@@ -68,9 +68,9 @@ public:
     if (outputs[1] != nullptr) {
       mkl_free(outputs[1]);
     }
-    inputs= (double*)mkl_calloc(batch_size * in_dim, sizeof(double), 64);
-    outputs[0] = (double*)mkl_calloc(batch_size * hidden_dim, sizeof(double), 64);
-    outputs[1] = (double*)mkl_calloc(batch_size * hidden_dim, sizeof(double), 64);
+    inputs= (double*)mkl_calloc(bs * in_dim, sizeof(double), 64);
+    outputs[0] = (double*)mkl_calloc(bs * hidden_dim, sizeof(double), 64);
+    outputs[1] = (double*)mkl_calloc(bs * hidden_dim, sizeof(double), 64);
   }
 
   void transform(KKVT* tran_kvs, uint32_t size) {

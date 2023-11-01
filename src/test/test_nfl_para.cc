@@ -80,7 +80,6 @@ void test_workload(std::string workload_path, std::string weight_path,
 
   COUT_INFO("Bulk loading\t" << construct_index_time << " sec\t"
             << bulk_load_index_time << " sec")
-  exit(-1);
 
   pthread_t threads[num_workers];
   ThreadParam<KT, VT> thread_params[num_workers];
@@ -163,10 +162,14 @@ void test_keyset(std::string data_path, std::string weight_path,
   // Test query
   COUT_INFO("Test Querying")
   for (uint32_t i = 0; i < init_data.size(); ++ i) {
-    VT value;
+    // COUT_INFO("Search " << i << "th key-value pair [" << init_data[i].first << ", " << init_data[i].second << "]");
+    VT value = 0;
     bool found = nfl.find(init_data[i].first, value);
     ASSERT_WITH_MSG(found, "Cannot find " << i << "th key (" 
                     << init_data[i].first << ")")
+    ASSERT_WITH_MSG(value == init_data[i].second, "Find the wrong value [" 
+                    << value << "] which should be [" << init_data[i].second 
+                    << "], the query key is [" << init_data[i].first << "]");
   }
   // Test insert
   COUT_INFO("Test Insertion")
@@ -176,16 +179,22 @@ void test_keyset(std::string data_path, std::string weight_path,
   // Test query
   COUT_INFO("Test Querying After Insertion")
   for (uint32_t i = 0; i < init_data.size(); ++ i) {
-    VT value;
+    VT value = 0;
     bool found = nfl.find(init_data[i].first, value);
     ASSERT_WITH_MSG(found, "Cannot find " << i << "th loading key (" 
                     << init_data[i].first << ")")
+    ASSERT_WITH_MSG(value == init_data[i].second, "Find the wrong value [" 
+                    << value << "] which should be [" << init_data[i].second 
+                    << "], the query key is [" << init_data[i].first << "]");
   }
   for (uint32_t i = 0; i < insert_data.size(); ++ i) {
-    VT value;
+    VT value = 0;
     bool found = nfl.find(insert_data[i].first, value);
     ASSERT_WITH_MSG(found, "Cannot find " << i << "th inserted key (" 
                     << insert_data[i].first << ")")
+    ASSERT_WITH_MSG(value == insert_data[i].second, "Find the wrong value [" 
+                    << value << "] which should be [" << insert_data[i].second 
+                    << "], the query key is [" << insert_data[i].first << "]");
   }
   COUT_INFO("Test Success")
 }

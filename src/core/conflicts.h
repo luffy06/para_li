@@ -34,11 +34,11 @@ struct ConflictsInfo {
 
 template<typename KT, typename VT>
 ConflictsInfo* build_linear_model(const std::pair<KT, VT>* kvs, uint32_t size,
-                                  LinearModel<KT>*& model, double size_amp=1) {
+                                  LinearModel*& model, double size_amp=1) {
   if (model != nullptr) {
     model->slope = model->intercept = 0;
   } else {
-    model = new LinearModel<KT>();
+    model = new LinearModel();
   }
   // OPT: Find a linear regression model that has the minimum conflict degree
   // The heuristics below is a simple method that scales the positions
@@ -47,12 +47,12 @@ ConflictsInfo* build_linear_model(const std::pair<KT, VT>* kvs, uint32_t size,
   ASSERT_WITH_MSG(!equal(min_key, max_key), "Range [" << min_key << ", " 
                   << max_key << "], Size: " << size 
                   << ", all keys used to build the linear model are the same.")
-  double key_space = max_key - min_key;
-  uint32_t capacity = static_cast<uint32_t>(size * size_amp);
-  LinearModelBuilder<KT> builder;
+  int64_t capacity = static_cast<int64_t>(size * size_amp);
+  double key_space = (max_key - min_key) / static_cast<double>(capacity);
+  LinearModelBuilder builder;
   for (uint32_t i = 0; i < size; ++ i) {
-    // double key = (kvs[i].first - min_key) / (max_key - min_key);
-    double key = kvs[i].first;
+    double key = (kvs[i].first - min_key) / key_space;
+    // double key = kvs[i].first;
     double y = i;
     builder.add(key, y);
   }
@@ -63,18 +63,21 @@ ConflictsInfo* build_linear_model(const std::pair<KT, VT>* kvs, uint32_t size,
              << "keys ranging from [" << min_key << "] to [" << max_key 
              << "] are too large.")
   } else {
-    // model->slope = model->slope / key_space;
+    // y = k * z + b
+    // z = (x - u) / s
+    // y = k * (x - u) / s + b = (k / s) * x - k * u / s + b
+    model->slope = model->slope / key_space;
     model->intercept = -model->slope * min_key + 0.5;
     ASSERT_WITH_MSG(model->predict(min_key) == 0, 
                     "The first prediction must be zero")
     int64_t predicted_size = model->predict(max_key) + 1;
     if (predicted_size > 1) {
-      capacity = std::min(predicted_size, static_cast<int64_t>(capacity));
+      capacity = std::min(predicted_size, capacity);
     }
-    uint32_t first_pos = std::min(std::max(model->predict(min_key), 0L), 
-                                  static_cast<int64_t>(capacity - 1));
-    uint32_t last_pos = std::min(std::max(model->predict(max_key), 0L), 
-                                  static_cast<int64_t>(capacity - 1));
+    int64_t first_pos = std::min(std::max(model->predict(min_key), 0L), 
+                                          capacity - 1);
+    int64_t last_pos = std::min(std::max(model->predict(max_key), 0L), 
+                                         capacity - 1);
     if (last_pos == first_pos) {
       // Model fails to predict since all predicted positions are rounded to 
       // the same one
@@ -85,11 +88,11 @@ ConflictsInfo* build_linear_model(const std::pair<KT, VT>* kvs, uint32_t size,
       model->intercept = -model->slope * min_key + 0.5;
     }
     ConflictsInfo* ci = new ConflictsInfo(size, capacity);
-    uint32_t p_last = first_pos;
+    int64_t p_last = first_pos;
     uint32_t conflict = 1;
     for (uint32_t i = 1; i < size; ++ i) {
-      uint32_t p = std::min(std::max(model->predict(kvs[i].first), 0L), 
-                            static_cast<int64_t>(capacity - 1));
+      double key = kvs[i].first;
+      int64_t p = std::min(std::max(model->predict(key), 0L), capacity - 1);
       if (p == p_last) {
         conflict ++;
       } else {
@@ -109,7 +112,7 @@ template<typename KT, typename VT>
 uint32_t compute_tail_conflicts(const std::pair<KT, VT>* kvs, uint32_t size, 
                                 double size_amp, float kTailPercent=0.99) {
   // The input keys should be ordered
-  LinearModel<KT>* model = new LinearModel<KT>();
+  LinearModel* model = new LinearModel();
   ConflictsInfo* ci = build_linear_model<KT, VT>(kvs, size, model, size_amp);
   delete model;
 

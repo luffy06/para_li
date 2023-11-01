@@ -140,8 +140,8 @@ void AFLIPara<KT, VT>::adapt_bucket_size(const KVT* kvs, uint32_t size,
 //   if (node->model_ != nullptr) {
 //     // Model node
 //     ts.num_model_nodes_ ++;
-//     ts.model_size_ += sizeof(TNodePara<KT, VT>) + sizeof(LinearModel<KT>);
-//     ts.index_size_ += sizeof(TNodePara<KT, VT>) + sizeof(LinearModel<KT>) 
+//     ts.model_size_ += sizeof(TNodePara<KT, VT>) + sizeof(LinearModel);
+//     ts.index_size_ += sizeof(TNodePara<KT, VT>) + sizeof(LinearModel) 
 //                     + sizeof(BIT_TYPE) * 2 * BIT_LEN(node->capacity_) 
 //                     + sizeof(AtomicEntry<KT, VT>) * node->capacity_;
 //     bool is_leaf_node = true;

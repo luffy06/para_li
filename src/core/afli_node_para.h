@@ -62,7 +62,7 @@ typedef std::pair<KT, VT> KVT;
 public:
   uint32_t                    id;        // DELETE
 
-  LinearModel<KT>*            model;     // 'nullptr' means this is a btree node
+  LinearModel*            model;     // 'nullptr' means this is a btree node
   uint32_t                    capacity;  // The pre-allocated size of array
   uint8_t*                    bitmap0;   // The i-th bit indicates whether the i-th position has a bucket or a child node
   uint8_t*                    bitmap1;   // The i-th bit indicates whether the i-th position is a bucket

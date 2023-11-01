@@ -44,7 +44,7 @@ public:
     }
   }
 
-  KKVT transform(const KVT kv) {
+  KKVT transform(const KVT& kv) {
     KKVT t_kv = {(kv.first - mean) / var, kv};
     model.transform(&t_kv, 1);
     return t_kv;

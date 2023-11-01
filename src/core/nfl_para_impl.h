@@ -93,8 +93,11 @@ void NFLPara<KT, VT>::set_max_buffer_size(uint32_t mbs) {
 }
 
 template<typename KT, typename VT>
-void NFLPara<KT, VT>::bulk_load(const KVT* kvs, uint32_t size, 
-                                bool enable_flow) {
+void NFLPara<KT, VT>::bulk_load(const KVT* kvs, uint32_t size, bool ef) {
+  for (uint32_t i = 1; i < size; ++ i) {
+    ASSERT_WITH_MSG(kvs[i].first > kvs[i - 1].first, "Unordered bulk-loading data");
+  }
+  enable_flow = ef;
   if (!enable_flow) {
     index = new AFLIPara<KT, VT>(num_bg, pool);
     index->bulk_load(kvs, size);
@@ -103,16 +106,17 @@ void NFLPara<KT, VT>::bulk_load(const KVT* kvs, uint32_t size,
     uint32_t origin_tail_conflicts = compute_tail_conflicts(kvs, size, 
                                                             kSizeAmplification, 
                                                             kTailPercent);
-    flow->set_batch_size(32);
+    COUT_INFO("Original tail conflicts " << origin_tail_conflicts);
+    flow->set_batch_size(kMaxBatchSize);
     flow->transform(kvs, size, tran_kvs);
-    std::sort(tran_kvs, tran_kvs + size, [](auto const& a, auto const& b) {
-      return a.first < b.first;
+    std::sort(tran_kvs, tran_kvs + size, 
+      [](auto const& a, auto const& b) {
+        return a.first < b.first;
     });
     uint32_t tran_tail_conflicts = compute_tail_conflicts(tran_kvs, size, 
                                                           kSizeAmplification, 
                                                           kTailPercent);
-    COUT_INFO("Origin Tail Conflicts\t" << origin_tail_conflicts
-              << "\nTransformed Tail Conflicts\t" << tran_tail_conflicts)
+    COUT_INFO("Transformed tail conflicts " << tran_tail_conflicts);
     exit(-1);
     if (static_cast<int64_t>(origin_tail_conflicts) - tran_tail_conflicts 
         < static_cast<int64_t>(origin_tail_conflicts * kConflictsDecay)) {
@@ -122,15 +126,11 @@ void NFLPara<KT, VT>::bulk_load(const KVT* kvs, uint32_t size,
     } else {
       tran_index = new AFLIPara<double, KVT>(num_bg, pool);
       tran_index->bulk_load(tran_kvs, size);
-      flow->set_batch_size(buffer_size);
+      flow->set_batch_size(max_buffer_size);
     }
     delete[] tran_kvs;
   }
-  if (enable_flow) {
-    COUT_INFO("Enable Flow");
-  } else {
-    COUT_INFO("Disable Flow");
-  }
+  COUT_INFO((enable_flow ? "Enable Flow" : "Disable Flow"));
 }
 
 template<typename KT, typename VT>
@@ -145,13 +145,12 @@ bool NFLPara<KT, VT>::find(KT key, VT& value) {
   }
   unlock_buffer();
   if (in_buffer) {
-    COUT_INFO("Find in buffer");
     return true;
   } else {
-    COUT_INFO("Start to find in index");
     if (enable_flow) {
-      KKVT tran_kv = flow->transform({key, 0});
-      KVT kv;
+      KVT kv = {key, 0};
+      KKVT tran_kv = flow->transform(kv);
+      // COUT_INFO("Original key " << key << "\tTransformed key " << std::setprecision(10) << tran_kv.first);
       bool res = tran_index->find(tran_kv.first, kv);
       value = kv.second;
       return res;
